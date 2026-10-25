@@ -1,6 +1,5 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
-require_once __DIR__ . '/BaseApiController.php';
 
 /** UnitController (admin) - rooms/units inside a property. Occupied/vacant is driven by leases. */
 class UnitController extends BaseApiController

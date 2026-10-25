@@ -48,17 +48,6 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 |     $router->get('api/x', 'X::y')->middleware('auth');
 |     $router->group(['middleware' => ['auth', 'admin']], function ($router) { ... });
 */
-$mw = APP_DIR . 'middlewares/';
-require_once $mw . 'Req_context.php';
-require_once $mw . 'SecurityHeadersMiddleware.php';
-require_once $mw . 'ThrottleMiddleware.php';
-require_once $mw . 'JsonOnlyMiddleware.php';
-require_once $mw . 'AuthMiddleware.php';
-require_once $mw . 'RoleMiddleware.php';
-require_once $mw . 'PaymongoWebhookMiddleware.php';
-require_once $mw . 'CronMiddleware.php';
-require_once $mw . 'DevOnlyMiddleware.php';
-
 $config['middlewares'] = [
     // --- global (applied to every route) ---
     'security_headers' => new SecurityHeadersMiddleware(),   // nosniff, frame-deny, CSP, HSTS, no-store

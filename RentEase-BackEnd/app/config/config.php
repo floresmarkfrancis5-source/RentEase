@@ -354,6 +354,8 @@ $config['csrf_regenerate']         = FALSE;
 |--------------------------------------------------------------------------
 | The kernel only reads config.php, so the middleware map
 | (app/config/middleware.php) is pulled in here.
+| Composer must be loaded first because the map instantiates middleware classes.
 */
+require_once ROOT_DIR . 'vendor/autoload.php';
 require_once APP_DIR . 'config/middleware.php';
 ?>

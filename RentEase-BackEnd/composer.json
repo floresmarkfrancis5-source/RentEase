@@ -11,6 +11,20 @@
         "dompdf/dompdf": ">=2.0",
         "phpmailer/phpmailer": ">=6.9"
     },
+    "autoload": {
+        "classmap": [
+            "app/controllers/BaseApiController.php",
+            "app/middlewares/Req_context.php",
+            "app/middlewares/SecurityHeadersMiddleware.php",
+            "app/middlewares/ThrottleMiddleware.php",
+            "app/middlewares/JsonOnlyMiddleware.php",
+            "app/middlewares/AuthMiddleware.php",
+            "app/middlewares/RoleMiddleware.php",
+            "app/middlewares/PaymongoWebhookMiddleware.php",
+            "app/middlewares/CronMiddleware.php",
+            "app/middlewares/DevOnlyMiddleware.php"
+        ]
+    },
     "config": {
         "optimize-autoloader": true,
         "sort-packages": true

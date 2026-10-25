@@ -1,6 +1,5 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
-require_once __DIR__ . '/BaseApiController.php';
 
 /** Public, non-enumerating email password reset flow. */
 class PasswordResetController extends BaseApiController

@@ -1,6 +1,5 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
-require_once __DIR__ . '/BaseApiController.php';
 
 /**
  * CronController - scheduled jobs (middleware: cron = X-Cron-Token header).

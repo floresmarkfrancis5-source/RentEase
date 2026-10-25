@@ -1,6 +1,5 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
-require_once __DIR__ . '/BaseApiController.php';
 
 /** UnitTransferController - tenant requests and landlord decisions for unit transfers. */
 class UnitTransferController extends BaseApiController

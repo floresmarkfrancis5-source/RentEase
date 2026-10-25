@@ -3,7 +3,6 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
 /**
  * BaseApiController - shared helpers for every RentEase API controller (not routed itself).
- * Each controller does:   require_once __DIR__ . '/BaseApiController.php';
  */
 class BaseApiController extends Controller
 {

@@ -1,6 +1,5 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
-require_once __DIR__ . '/BaseApiController.php';
 
 /** LeaseController (admin) - assign a tenant to a unit with rent, deposit and due day. */
 class LeaseController extends BaseApiController

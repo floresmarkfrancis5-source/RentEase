@@ -1,6 +1,5 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
-require_once __DIR__ . '/BaseApiController.php';
 
 /** First-run landlord setup. The landlord can always skip and use the regular CRUD pages. */
 class OnboardingController extends BaseApiController

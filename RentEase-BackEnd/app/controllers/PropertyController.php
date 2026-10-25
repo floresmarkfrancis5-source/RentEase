@@ -1,6 +1,5 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
-require_once __DIR__ . '/BaseApiController.php';
 
 /** PropertyController (admin) - CRUD for apartments / boarding houses incl. map coordinates. */
 class PropertyController extends BaseApiController

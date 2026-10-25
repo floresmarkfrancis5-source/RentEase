@@ -1,6 +1,5 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
-require_once __DIR__ . '/BaseApiController.php';
 
 /** MaintenanceController (admin) - see all repair requests and update their status (e-mails the tenant). */
 class MaintenanceController extends BaseApiController
