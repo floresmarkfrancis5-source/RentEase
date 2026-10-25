@@ -1,5 +1,16 @@
-node_modules
-dist
+# Generated dependencies and build output
+node_modules/
+dist/
+vendor/
+
+# Secrets and local environment
 .env
 .env.local
+.env.*
+!.env.example
 .env.*.local
+
+# Runtime cache and logs
+runtime/cache/
+*.cache
+*.log

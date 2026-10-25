@@ -1,0 +1,14 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Generated dependencies and build output
+node_modules/
+dist/
+vendor/
+
+# Runtime cache and logs
+**/runtime/cache/
+*.cache
+*.log

@@ -4,6 +4,7 @@ Thumbs.db
 
 # Environment (never commit real secrets)
 .env
+.env.*
 !.env.example
 
 # Dependencies (Render installs them with composer in the Dockerfile)
@@ -13,6 +14,7 @@ composer.lock
 
 # Cache & logs
 runtime/*
+runtime/cache/
 !runtime/.htaccess
 !runtime/index.html
 *.log
