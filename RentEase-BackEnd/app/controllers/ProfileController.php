@@ -80,10 +80,12 @@ class ProfileController extends BaseApiController
             $this->fail('Please fix the highlighted fields.', 422, $errors);
         }
 
-        $this->db->raw(
-            'UPDATE users SET full_name = ?, username = ?, email = ?, phone = ?, updated_at = ? WHERE id = ?',
-            [$data['full_name'], $data['username'], $data['email'], ($data['phone'] ?? '') === '' ? null : $data['phone'], date('Y-m-d H:i:s'), (int) $user['id']]
-        );
+        $this->User_model->update_user($user['id'], [
+            'full_name' => $data['full_name'],
+            'username' => $data['username'],
+            'email' => $data['email'],
+            'phone' => ($data['phone'] ?? '') === '' ? null : $data['phone'],
+        ]);
 
         $fresh = $this->User_model->find_by_id($user['id']);
         $this->ok(['message' => 'Profile saved', 'user' => $this->payload($fresh)]);
