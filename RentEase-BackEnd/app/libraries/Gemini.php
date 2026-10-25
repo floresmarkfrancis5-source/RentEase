@@ -24,15 +24,18 @@ class Gemini
         }
 
         $model = rawurlencode((string) config_item('gemini_model'));
-        $url = rtrim((string) config_item('gemini_api_url'), '/') . '/models/' . $model
-             . ':generateContent?key=' . rawurlencode((string) config_item('gemini_api_key'));
+        $url = rtrim((string) config_item('gemini_api_url'), '/') . '/models/' . $model . ':generateContent';
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CONNECTTIMEOUT => 15,
             CURLOPT_TIMEOUT => 90,
-            CURLOPT_HTTPHEADER => ['Accept: application/json', 'Content-Type: application/json'],
+            CURLOPT_HTTPHEADER => [
+                'Accept: application/json',
+                'Content-Type: application/json',
+                'x-goog-api-key: ' . (string) config_item('gemini_api_key'),
+            ],
             CURLOPT_POSTFIELDS => json_encode([
                 'contents' => $contents,
                 'systemInstruction' => ['parts' => [['text' => $this->instructions()]]],
