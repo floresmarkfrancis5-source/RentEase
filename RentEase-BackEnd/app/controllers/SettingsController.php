@@ -48,11 +48,7 @@ class SettingsController extends BaseApiController
     public function history()
     {
         $this->api->require_method('GET');
-        $rows = $this->db->raw(
-            "SELECT l.setting_key, l.old_value, l.new_value, l.changed_at, u.username AS changed_by
-               FROM site_settings_log l LEFT JOIN users u ON u.id = l.changed_by ORDER BY l.id DESC LIMIT 50"
-        )->fetchAll(PDO::FETCH_ASSOC);
-        $this->ok(['data' => $rows]);
+        $this->ok(['data' => $this->Site_setting_model->history()]);
     }
 
     /**
