@@ -1,0 +1,24 @@
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Environment (never commit real secrets)
+.env
+!.env.example
+
+# Dependencies (Render installs them with composer in the Dockerfile)
+vendor/
+app/vendor/
+composer.lock
+
+# Cache & logs
+runtime/*
+!runtime/.htaccess
+!runtime/index.html
+*.log
+*.cache
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
