@@ -24,7 +24,7 @@ Base URL: `https://<your-api>.onrender.com`. JSON in, JSON out. Private routes n
 |---|---|
 | dashboard | `GET dashboard`, `GET notifications` |
 | onboarding | `GET onboarding`, `POST onboarding`, `POST onboarding/skip` |
-| AI assistant | `POST assistant/chat {message,history}` (Gemini proposes a draft; does not persist rental records) |
+| AI assistant | `GET assistant/conversations`, `POST assistant/conversations`, `GET/DELETE assistant/conversations/{id}`, `POST assistant/conversations/{id}/confirmation`; `POST assistant/chat {message,conversation_id?,edit_message_id?}` (Gemini drafts only; conversations are saved per landlord and editing regenerates from that prompt) |
 | profile (any logged-in user) | `GET/PUT /api/profile`, `GET/PUT/DELETE /api/profile/photo` |
 | settings | `PUT settings`, `POST settings/reset`, `GET settings/history`, `PUT settings/image` (body `{key, image: dataURL}`), `DELETE settings/image/{key}` |
 | properties | `GET/POST properties`, `GET/PUT/DELETE properties/{id}`; property bodies accept `barangay` (plain text, max 100 characters) as well as `city`, `latitude` and `longitude` |

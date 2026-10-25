@@ -24,7 +24,7 @@ Base URL: `https://<your-api>.onrender.com`. JSON in, JSON out. Private routes n
 |---|---|
 | dashboard | `GET dashboard`, `GET notifications` (email log) |
 | onboarding | `GET onboarding`, `POST onboarding`, `POST onboarding/skip` |
-| AI assistant | `POST assistant/chat {message,history}` (Gemini drafts only; does not write records) |
+| AI assistant | `GET assistant/conversations`, `POST assistant/conversations`, `GET/DELETE assistant/conversations/{id}`, `POST assistant/conversations/{id}/confirmation`; `POST assistant/chat {message,conversation_id?,edit_message_id?}` (Gemini drafts only; saved per landlord; editing regenerates from that prompt) |
 | in-app notifications | `GET in-app-notifications`, `GET in-app-notifications/unread-count`, `PATCH in-app-notifications/{id}/read`, `PATCH in-app-notifications/read-all` |
 | transfers | `GET transfer-requests`, `PATCH transfer-requests/{id} {status: approved|rejected, admin_note?}` |
 | profile (any logged-in user) | `GET/PUT /api/profile`, `GET/PUT/DELETE /api/profile/photo` |

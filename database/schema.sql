@@ -280,5 +280,26 @@ CREATE TABLE IF NOT EXISTS `in_app_notifications` (
   KEY `user_unread_idx` (`user_id`,`is_read`,`created_at`),
   CONSTRAINT `fk_in_app_notification_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `assistant_conversations` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int(10) unsigned NOT NULL,
+  `title` varchar(120) NOT NULL DEFAULT 'New conversation',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `assistant_conversation_user_updated` (`user_id`,`updated_at`,`id`),
+  CONSTRAINT `fk_assistant_conversation_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `assistant_messages` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `conversation_id` int(10) unsigned NOT NULL,
+  `role` enum('user','assistant') NOT NULL,
+  `content` mediumtext NOT NULL,
+  `proposal_json` json DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `assistant_message_conversation` (`conversation_id`,`id`),
+  CONSTRAINT `fk_assistant_message_conversation` FOREIGN KEY (`conversation_id`) REFERENCES `assistant_conversations` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

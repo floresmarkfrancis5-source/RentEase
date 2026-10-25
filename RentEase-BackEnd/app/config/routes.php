@@ -106,6 +106,11 @@ $router->group(['prefix' => 'api/admin', 'middleware' => ['auth', 'admin']], fun
     $router->get('onboarding', 'OnboardingController::status');
     $router->post('onboarding', 'OnboardingController::save');
     $router->post('onboarding/skip', 'OnboardingController::complete');
+    $router->get('assistant/conversations', 'AssistantController::conversations');
+    $router->post('assistant/conversations', 'AssistantController::create_conversation');
+    $router->get('assistant/conversations/{id}', 'AssistantController::show_conversation');
+    $router->delete('assistant/conversations/{id}', 'AssistantController::delete_conversation');
+    $router->post('assistant/conversations/{id}/confirmation', 'AssistantController::record_confirmation');
     $router->post('assistant/chat', 'AssistantController::chat');
     $router->get('dashboard',     'DashboardController::index');
     $router->get('notifications', 'DashboardController::notifications');
