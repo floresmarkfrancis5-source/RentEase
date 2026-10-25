@@ -216,7 +216,7 @@ class AuthController extends BaseApiController
 
         $this->User_model->update_user($user['id'], ['password' => password_hash($new, PASSWORD_DEFAULT), 'must_change_password' => 0]);
         // Sign every other device out.
-        $this->db->raw('DELETE FROM refresh_tokens WHERE user_id = ?', [(int) $user['id']]);
+        $this->User_model->delete_refresh_tokens($user['id']);
         $this->ok(['message' => 'Password changed. Please log in again on your other devices.']);
     }
 }
