@@ -145,6 +145,28 @@ class User_model extends Model
         return (int) $this->db->last_id();
     }
 
+    public function create_tenant_with_lease(array $user, array $lease, $landlord_id, Unit_model $unit_model, Lease_model $lease_model)
+    {
+        $this->db->transaction();
+        try {
+            $unit = $unit_model->available_for_lease($lease['unit_id'], true, $landlord_id);
+            if (!$unit) {
+                $this->db->roll_back();
+                return null;
+            }
+
+            $id = $this->create_user($user);
+            $lease['tenant_id'] = $id;
+            $lease['monthly_rent'] = $lease['monthly_rent'] ?? $unit['monthly_rent'];
+            $lease_model->create_lease_in_transaction($lease, $landlord_id);
+            $this->db->commit();
+            return ['id' => $id, 'unit' => $unit];
+        } catch (Throwable $e) {
+            $this->db->roll_back();
+            throw $e;
+        }
+    }
+
     public function update_user($id, array $d)
     {
         $allowed = array_intersect_key($d, array_flip(['username', 'email', 'full_name', 'phone', 'is_active', 'password', 'must_change_password', 'google_id', 'onboarding_completed']));
@@ -199,5 +221,10 @@ class User_model extends Model
     public function delete_user($id)
     {
         return $this->db->table($this->table)->where('id', (int) $id)->delete();
+    }
+
+    public function delete_refresh_tokens($id)
+    {
+        return $this->db->table('refresh_tokens')->where('user_id', (int) $id)->delete();
     }
 }

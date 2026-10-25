@@ -84,36 +84,27 @@ class TenantController extends BaseApiController
             $this->fail('That email address already has an account.', 409, ['email' => 'Already registered.']);
         }
 
-        $this->db->transaction();
-        try {
-            $unit = $this->Unit_model->available_for_lease($data['unit_id'], true, $this->uid());
-            if (!$unit) {
-                $this->db->roll_back();
-                $this->fail('Choose a vacant unit in good condition.', 409, ['unit_id' => 'This unit is no longer available.']);
-            }
-            $id = $this->User_model->create_user([
-                'username'             => $data['username'],
-                'landlord_id'          => $this->uid(),
-                'email'                => $data['email'],
-                'password'             => password_hash($password, PASSWORD_DEFAULT),
-                'full_name'            => $data['full_name'],
-                'phone'                => $data['phone'] ?? null,
-                'role'                 => 'tenant',
-                'must_change_password' => 1,
-            ]);
-            $this->Lease_model->create_lease_in_transaction([
-                'unit_id'      => $data['unit_id'],
-                'tenant_id'    => $id,
-                'start_date'   => $data['start_date'],
-                'monthly_rent' => $data['monthly_rent'] ?? $unit['monthly_rent'],
-                'deposit'      => $data['deposit'],
-                'due_day'      => $data['due_day'],
-            ], $this->uid());
-            $this->db->commit();
-        } catch (Throwable $e) {
-            $this->db->roll_back();
-            throw $e;
+        $tenant = $this->User_model->create_tenant_with_lease([
+            'username'             => $data['username'],
+            'landlord_id'          => $this->uid(),
+            'email'                => $data['email'],
+            'password'             => password_hash($password, PASSWORD_DEFAULT),
+            'full_name'            => $data['full_name'],
+            'phone'                => $data['phone'] ?? null,
+            'role'                 => 'tenant',
+            'must_change_password' => 1,
+        ], [
+            'unit_id'      => $data['unit_id'],
+            'start_date'   => $data['start_date'],
+            'monthly_rent' => $data['monthly_rent'] ?? null,
+            'deposit'      => $data['deposit'],
+            'due_day'      => $data['due_day'],
+        ], $this->uid(), $this->Unit_model, $this->Lease_model);
+        if (!$tenant) {
+            $this->fail('Choose a vacant unit in good condition.', 409, ['unit_id' => 'This unit is no longer available.']);
         }
+        $id = $tenant['id'];
+        $unit = $tenant['unit'];
 
         $this->call->library('notifier');
         $this->notifier->welcome($id);
@@ -151,7 +142,7 @@ class TenantController extends BaseApiController
         $this->not_found_unless($this->User_model->find_tenant($id, $this->uid()), 'Tenant');
         $pw = $this->random_password();
         $this->User_model->update_user($id, ['password' => password_hash($pw, PASSWORD_DEFAULT), 'must_change_password' => 1]);
-        $this->db->raw('DELETE FROM refresh_tokens WHERE user_id = ?', [(int) $id]);
+        $this->User_model->delete_refresh_tokens($id);
         $this->ok(['message' => 'Password reset', 'temporary_password' => $pw]);
     }
 
