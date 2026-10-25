@@ -82,45 +82,48 @@ class UnitTransferController extends BaseApiController
             'admin_note' => ['type' => 'string', 'max' => 2000, 'nullable' => true],
         ]);
 
-        $this->db->transaction();
-        try {
-            $request = $this->Unit_transfer_model->find($id, true, $this->uid());
-            if (!$request) {
-                $this->db->roll_back();
-                $this->fail('Transfer request not found.', 404);
-            }
-            if ($request['status'] !== 'pending') {
-                $this->db->roll_back();
-                $this->fail('This transfer request has already been decided.', 409);
-            }
-
-            if ($decision['status'] === 'approved') {
-                $this->db->raw('SELECT id FROM users WHERE id = ? FOR UPDATE', [(int) $request['tenant_id']])->fetchColumn();
-                $lease = $this->db->raw(
-                    "SELECT * FROM leases WHERE tenant_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1 FOR UPDATE",
-                    [(int) $request['tenant_id']]
-                )->fetch(PDO::FETCH_ASSOC);
+        $admin_id = $this->uid();
+        $outcome = $this->Unit_transfer_model->decide_transactionally(
+            $id,
+            $decision['status'],
+            $decision['admin_note'] ?? null,
+            $admin_id,
+            function ($request) use ($admin_id) {
+                $this->User_model->lock_for_update($request['tenant_id']);
+                $lease = $this->Lease_model->active_for_tenant_for_update($request['tenant_id']);
                 if (!$lease || (int) $lease['unit_id'] !== (int) $request['current_unit_id']) {
-                    $this->db->roll_back();
-                    $this->fail('The tenant no longer has the unit associated with this request.', 409);
+                    return 'tenant_unit_changed';
                 }
-                $unit = $this->Unit_model->available_for_lease($request['requested_unit_id'], true, $this->uid());
+                $unit = $this->Unit_model->available_for_lease($request['requested_unit_id'], true, $admin_id);
                 if (!$unit) {
-                    $this->db->roll_back();
-                    $this->fail('The requested unit is no longer vacant and in good condition.', 409);
+                    return 'unit_unavailable';
                 }
-                $this->Lease_model->transfer_active_lease_in_transaction($lease, $unit, $this->uid());
+                $this->Lease_model->transfer_active_lease_in_transaction($lease, $unit, $admin_id);
+                return null;
             }
-            $this->Unit_transfer_model->decide($id, $decision['status'], $decision['admin_note'] ?? null, $this->uid());
-            $this->db->commit();
-        } catch (Throwable $e) {
-            $this->db->roll_back();
-            throw $e;
+        );
+
+        if (isset($outcome['error'])) {
+            switch ($outcome['error']) {
+                case 'not_found':
+                    $this->fail('Transfer request not found.', 404);
+                    break;
+                case 'already_decided':
+                    $this->fail('This transfer request has already been decided.', 409);
+                    break;
+                case 'tenant_unit_changed':
+                    $this->fail('The tenant no longer has the unit associated with this request.', 409);
+                    break;
+                case 'unit_unavailable':
+                    $this->fail('The requested unit is no longer vacant and in good condition.', 409);
+                    break;
+                default:
+                    throw new LogicException('Unexpected unit transfer decision error.');
+            }
         }
 
-        $result = $this->Unit_transfer_model->find($id);
         $this->call->library('notifier');
         $this->notifier->transfer_result($id);
-        $this->ok(['message' => 'Transfer request ' . $decision['status'], 'data' => $result]);
+        $this->ok(['message' => 'Transfer request ' . $decision['status'], 'data' => $outcome['request']]);
     }
 }

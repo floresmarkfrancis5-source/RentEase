@@ -20,6 +20,11 @@ class User_model extends Model
         return $this->db->table($this->table)->where('id', (int) $id)->get();
     }
 
+    public function lock_for_update($id)
+    {
+        return $this->db->raw('SELECT id FROM users WHERE id = ? FOR UPDATE', [(int) $id])->fetchColumn();
+    }
+
     public function find_by_email($email)
     {
         return $this->db->table($this->table)->where('email', strtolower($email))->get();

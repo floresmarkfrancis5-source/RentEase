@@ -78,4 +78,35 @@ class Unit_transfer_model extends Model
             'decided_at' => date('Y-m-d H:i:s'),
         ]);
     }
+
+    public function decide_transactionally($id, $status, $note, $admin_id, callable $approve_transfer)
+    {
+        $this->db->transaction();
+        try {
+            $request = $this->find($id, true, $admin_id);
+            if (!$request) {
+                $this->db->roll_back();
+                return ['error' => 'not_found'];
+            }
+            if ($request['status'] !== 'pending') {
+                $this->db->roll_back();
+                return ['error' => 'already_decided'];
+            }
+
+            if ($status === 'approved') {
+                $error = $approve_transfer($request);
+                if ($error !== null) {
+                    $this->db->roll_back();
+                    return ['error' => $error];
+                }
+            }
+
+            $this->decide($id, $status, $note, $admin_id);
+            $this->db->commit();
+            return ['request' => $this->find($id)];
+        } catch (Throwable $e) {
+            $this->db->roll_back();
+            throw $e;
+        }
+    }
 }

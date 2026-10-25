@@ -47,6 +47,14 @@ class Lease_model extends Model
         )->fetch(PDO::FETCH_ASSOC);
     }
 
+    public function active_for_tenant_for_update($tenant_id)
+    {
+        return $this->db->raw(
+            "SELECT * FROM leases WHERE tenant_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1 FOR UPDATE",
+            [(int) $tenant_id]
+        )->fetch(PDO::FETCH_ASSOC);
+    }
+
     public function unit_has_active_lease($unit_id)
     {
         return (bool) $this->db->table($this->table)
