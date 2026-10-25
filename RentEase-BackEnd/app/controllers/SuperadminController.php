@@ -24,17 +24,7 @@ class SuperadminController extends BaseApiController
         $data = $this->validate($this->input(), [
             'is_active' => ['type' => 'bool', 'required' => true],
         ]);
-        $this->db->transaction();
-        try {
-            $this->User_model->update_user($landlord['id'], $data);
-            if (!$data['is_active']) {
-                $this->db->raw('DELETE FROM refresh_tokens WHERE user_id = ?', [(int) $landlord['id']]);
-            }
-            $this->db->commit();
-        } catch (Throwable $e) {
-            $this->db->roll_back();
-            throw $e;
-        }
+        $this->User_model->set_landlord_active($landlord['id'], $data['is_active']);
         $this->ok(['message' => $data['is_active'] ? 'Landlord account activated.' : 'Landlord account deactivated.']);
     }
 
@@ -104,10 +94,7 @@ class SuperadminController extends BaseApiController
     public function update_superadmin($id)
     {
         $this->api->require_method('PATCH');
-        $superadmin = $this->db->raw(
-            "SELECT id, is_active FROM users WHERE id = ? AND role = 'superadmin' LIMIT 1",
-            [(int) $id]
-        )->fetch(PDO::FETCH_ASSOC);
+        $superadmin = $this->User_model->find_superadmin($id);
         $this->not_found_unless($superadmin, 'Superadmin');
         $data = $this->validate($this->input(), [
             'is_active' => ['type' => 'bool', 'required' => true],
@@ -115,23 +102,8 @@ class SuperadminController extends BaseApiController
         if (!(int) $data['is_active'] && (int) $id === $this->uid()) {
             $this->fail('You cannot deactivate your own superadmin account.', 409);
         }
-        if (!(int) $data['is_active']) {
-            $this->db->transaction();
-            try {
-                $this->db->raw('SELECT id FROM users WHERE role = ? FOR UPDATE', ['superadmin'])->fetchAll(PDO::FETCH_COLUMN);
-                if ((int) $superadmin['is_active'] === 1 && $this->User_model->active_superadmin_count() <= 1) {
-                    $this->db->roll_back();
-                    $this->fail('At least one active superadmin account must remain.', 409);
-                }
-                $this->User_model->update_user($id, $data);
-                $this->db->raw('DELETE FROM refresh_tokens WHERE user_id = ?', [(int) $id]);
-                $this->db->commit();
-            } catch (Throwable $e) {
-                $this->db->roll_back();
-                throw $e;
-            }
-        } else {
-            $this->User_model->update_user($id, $data);
+        if (!$this->User_model->set_superadmin_active($id, $data['is_active'], $superadmin['is_active'])) {
+            $this->fail('At least one active superadmin account must remain.', 409);
         }
         $this->ok(['message' => $data['is_active'] ? 'Superadmin account activated.' : 'Superadmin account deactivated.']);
     }

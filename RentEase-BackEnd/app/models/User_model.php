@@ -75,6 +75,16 @@ class User_model extends Model
             ->get();
     }
 
+    public function find_superadmin($id)
+    {
+        return $this->db->table($this->table)
+            ->select('id, is_active')
+            ->where('id', (int) $id)
+            ->where('role', 'superadmin')
+            ->limit(1)
+            ->get();
+    }
+
     public function superadmins()
     {
         return $this->db->raw(
@@ -226,5 +236,44 @@ class User_model extends Model
     public function delete_refresh_tokens($id)
     {
         return $this->db->table('refresh_tokens')->where('user_id', (int) $id)->delete();
+    }
+
+    public function set_landlord_active($id, $is_active)
+    {
+        $this->db->transaction();
+        try {
+            $this->update_user($id, ['is_active' => (int) $is_active]);
+            if (!(int) $is_active) {
+                $this->delete_refresh_tokens($id);
+            }
+            $this->db->commit();
+        } catch (Throwable $e) {
+            $this->db->roll_back();
+            throw $e;
+        }
+    }
+
+    public function set_superadmin_active($id, $is_active, $was_active)
+    {
+        if ((int) $is_active) {
+            $this->update_user($id, ['is_active' => 1]);
+            return true;
+        }
+
+        $this->db->transaction();
+        try {
+            $this->db->raw('SELECT id FROM users WHERE role = ? FOR UPDATE', ['superadmin'])->fetchAll(PDO::FETCH_COLUMN);
+            if ((int) $was_active === 1 && $this->active_superadmin_count() <= 1) {
+                $this->db->roll_back();
+                return false;
+            }
+            $this->update_user($id, ['is_active' => 0]);
+            $this->delete_refresh_tokens($id);
+            $this->db->commit();
+            return true;
+        } catch (Throwable $e) {
+            $this->db->roll_back();
+            throw $e;
+        }
     }
 }
