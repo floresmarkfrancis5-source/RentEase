@@ -42,27 +42,12 @@ class PasswordResetController extends BaseApiController
             $this->fail('This reset link is invalid or expired. Request a new one.', 422);
         }
 
-        $this->db->transaction();
-        try {
-            $token = $this->Password_reset_model->valid_token(hash('sha256', $data['token']), true);
-            if (!$token) {
-                $this->db->roll_back();
-                $this->fail('This reset link is invalid or expired. Request a new one.', 422);
-            }
-            $this->User_model->update_user($token['user_id'], [
-                'password' => password_hash($data['password'], PASSWORD_DEFAULT),
-                'must_change_password' => 0,
-            ]);
-            $this->Password_reset_model->consume($token['id']);
-            $this->db->raw(
-                'UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL',
-                [(int) $token['user_id']]
-            );
-            $this->db->raw('DELETE FROM refresh_tokens WHERE user_id = ?', [(int) $token['user_id']]);
-            $this->db->commit();
-        } catch (Throwable $e) {
-            $this->db->roll_back();
-            throw $e;
+        if (!$this->Password_reset_model->complete_reset(
+            hash('sha256', $data['token']),
+            password_hash($data['password'], PASSWORD_DEFAULT),
+            $this->User_model
+        )) {
+            $this->fail('This reset link is invalid or expired. Request a new one.', 422);
         }
         $this->ok(['message' => 'Password reset successfully. You can now sign in with your new password.']);
     }

@@ -29,25 +29,55 @@ class Password_reset_model extends Model
 
     public function consume($id)
     {
-        return $this->db->raw(
-            'UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ? AND used_at IS NULL',
-            [(int) $id]
-        )->rowCount();
+        return $this->db->table($this->table)
+            ->where('id', (int) $id)
+            ->where_null('used_at')
+            ->update(['used_at' => $this->database_now()]);
     }
 
     public function revoke_previous($user_id, $except_id)
     {
-        return $this->db->raw(
-            'UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = ? AND id <> ? AND used_at IS NULL',
-            [(int) $user_id, (int) $except_id]
-        )->rowCount();
+        return $this->db->table($this->table)
+            ->where('user_id', (int) $user_id)
+            ->where('id', '<>', (int) $except_id)
+            ->where_null('used_at')
+            ->update(['used_at' => $this->database_now()]);
     }
 
     public function revoke($id)
     {
-        return $this->db->raw(
-            'UPDATE password_reset_tokens SET used_at = NOW() WHERE id = ? AND used_at IS NULL',
-            [(int) $id]
-        )->rowCount();
+        return $this->db->table($this->table)
+            ->where('id', (int) $id)
+            ->where_null('used_at')
+            ->update(['used_at' => $this->database_now()]);
+    }
+
+    public function complete_reset($token_hash, $password_hash, User_model $user_model)
+    {
+        $this->db->transaction();
+        try {
+            $token = $this->valid_token($token_hash, true);
+            if (!$token) {
+                $this->db->roll_back();
+                return false;
+            }
+            $user_model->update_user($token['user_id'], [
+                'password' => $password_hash,
+                'must_change_password' => 0,
+            ]);
+            $this->consume($token['id']);
+            $this->revoke_previous($token['user_id'], $token['id']);
+            $user_model->delete_refresh_tokens($token['user_id']);
+            $this->db->commit();
+            return true;
+        } catch (Throwable $e) {
+            $this->db->roll_back();
+            throw $e;
+        }
+    }
+
+    private function database_now()
+    {
+        return $this->db->raw('SELECT NOW()')->fetchColumn();
     }
 }
