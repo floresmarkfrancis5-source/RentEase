@@ -3,6 +3,8 @@
 $h = function ($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); };
 $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $accent) ? $accent : '#0f766e';
 $peso = function ($n) { return 'PHP ' . number_format((float) $n, 2); };
+$lateFee = max(0, (float) ($bill['late_fee_amount'] ?? 0));
+$billBeforeLateFee = max(0, (float) $bill['amount'] - $lateFee);
 $colors = ['paid' => '#059669', 'unpaid' => '#b45309', 'overdue' => '#e11d48'];
 ?>
 <html><head><meta charset="utf-8"><style>
@@ -27,6 +29,12 @@ $colors = ['paid' => '#059669', 'unpaid' => '#b45309', 'overdue' => '#e11d48'];
     <tr><th>Due date</th><td><?= $h(date('F j, Y', strtotime($bill['due_date']))) ?></td></tr>
     <tr><th>Status</th><td class="status"><?= $h($bill['status']) ?></td></tr>
   </table>
+  <?php if ($lateFee > 0): ?>
+    <table>
+      <tr><th>Bill before late fee</th><td style="text-align:right"><?= $h($peso($billBeforeLateFee)) ?></td></tr>
+      <tr><th>Late fee</th><td style="text-align:right"><?= $h($peso($lateFee)) ?></td></tr>
+    </table>
+  <?php endif; ?>
   <div class="total">Amount: <?= $h($peso($bill['amount'])) ?></div>
   <?php if ($payments): ?>
     <h3>Payments received</h3>

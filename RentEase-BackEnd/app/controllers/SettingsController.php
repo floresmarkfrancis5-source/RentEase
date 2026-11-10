@@ -2,8 +2,9 @@
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
 /**
- * SettingsController - website name, theme colors, hero content, glass look.
- *   GET  /api/settings                  public   (the whole site reads it to theme itself)
+ * SettingsController - landlord-specific theme, tenant welcome page, sidebar logo, and glass look.
+ *   GET  /api/settings                  public   (RentEase defaults)
+ *   GET  /api/my/settings               signed-in landlord or tenant's landlord settings
  *   PUT  /api/admin/settings            admin
  *   POST /api/admin/settings/reset      admin
  *   GET  /api/admin/settings/history    admin
@@ -23,6 +24,18 @@ class SettingsController extends BaseApiController
         $this->ok(['data' => $this->Site_setting_model->get_all()]);
     }
 
+    public function show_for_user()
+    {
+        $this->api->require_method('GET');
+        $user = $this->user();
+        $owner_id = $user['role'] === 'tenant' ? (int) $user['landlord_id'] : (int) $user['id'];
+        if (!in_array($user['role'], ['admin', 'tenant'], true) || $owner_id < 1) {
+            $this->fail('Landlord settings are not available for this account.', 404);
+        }
+        header('Cache-Control: no-store');
+        $this->ok(['data' => $this->Site_setting_model->get_all($owner_id)]);
+    }
+
     public function update()
     {
         $this->api->require_method('PUT');
@@ -34,25 +47,31 @@ class SettingsController extends BaseApiController
         if (!$clean) {
             $this->fail('No valid settings supplied', 400);
         }
-        $changed = $this->Site_setting_model->save($clean, $this->uid());
-        $this->ok(['message' => $changed ? 'Settings saved' : 'Nothing changed', 'changed' => $changed, 'data' => $this->Site_setting_model->get_all()]);
+        $changed = $this->Site_setting_model->save($clean, $this->uid(), $this->uid());
+        $this->ok(['message' => $changed ? 'Settings saved' : 'Nothing changed', 'changed' => $changed, 'data' => $this->Site_setting_model->get_all($this->uid())]);
     }
 
     public function reset()
     {
         $this->api->require_method('POST');
-        $changed = $this->Site_setting_model->reset($this->uid());
-        $this->ok(['message' => 'Settings restored to defaults', 'changed' => $changed, 'data' => $this->Site_setting_model->get_all()]);
+        $appearanceDefaults = [];
+        foreach (Site_setting_model::SCHEMA as $key => $definition) {
+            if ($definition['group'] !== 'billing') {
+                $appearanceDefaults[$key] = (string) $definition['default'];
+            }
+        }
+        $changed = $this->Site_setting_model->save($appearanceDefaults, $this->uid(), $this->uid());
+        $this->ok(['message' => 'Settings restored to defaults', 'changed' => $changed, 'data' => $this->Site_setting_model->get_all($this->uid())]);
     }
 
     public function history()
     {
         $this->api->require_method('GET');
-        $this->ok(['data' => $this->Site_setting_model->history()]);
+        $this->ok(['data' => $this->Site_setting_model->history($this->uid())]);
     }
 
     /**
-     * PUT /api/admin/settings/image   { "key": "logo|hero|login", "image": "data:image/webp;base64,..." }
+     * PUT /api/admin/settings/image   { "key": "logo|hero", "image": "data:image/webp;base64,..." }
      * The browser shrinks the picture first; the server still re-checks type, size and dimensions.
      */
     public function image_upload()
@@ -67,11 +86,12 @@ class SettingsController extends BaseApiController
             $this->fail($err, 422, ['image' => $err]);
         }
 
-        $this->Site_asset_model->put($key, $mime, $bin, $this->uid());
+        $this->Site_asset_model->put($key, $mime, $bin, $this->uid(), $this->uid());
         $setting = Site_asset_model::KEYS[$key]['setting'];
-        $this->Site_setting_model->save([$setting => '/api/assets/' . $key . '?v=' . time()], $this->uid());
+        $url = '/api/assets/' . $key . '?owner=' . $this->uid() . '&v=' . time();
+        $this->Site_setting_model->save([$setting => $url], $this->uid(), $this->uid());
 
-        $this->ok(['message' => 'Image saved', 'data' => $this->Site_setting_model->get_all()]);
+        $this->ok(['message' => 'Image saved', 'data' => $this->Site_setting_model->get_all($this->uid())]);
     }
 
     /** DELETE /api/admin/settings/image/{key} */
@@ -82,8 +102,8 @@ class SettingsController extends BaseApiController
         if (!isset(Site_asset_model::KEYS[$key])) {
             $this->fail('Unknown image slot.', 404);
         }
-        $this->Site_asset_model->remove($key);
-        $this->Site_setting_model->save([Site_asset_model::KEYS[$key]['setting'] => ''], $this->uid());
-        $this->ok(['message' => 'Image removed', 'data' => $this->Site_setting_model->get_all()]);
+        $this->Site_asset_model->remove($key, $this->uid());
+        $this->Site_setting_model->save([Site_asset_model::KEYS[$key]['setting'] => ''], $this->uid(), $this->uid());
+        $this->ok(['message' => 'Image removed', 'data' => $this->Site_setting_model->get_all($this->uid())]);
     }
 }

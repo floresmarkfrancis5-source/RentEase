@@ -36,23 +36,41 @@ class User_avatar_model extends Model
         return [$bin, $info['mime'], null];
     }
 
-    public function put($user_id, $mime, $binary)
+    public function put($user_id, $mime, $binary, $data_url = null)
     {
+        $avatar_url = null;
+        try {
+            $this->call->library('cloudinary');
+            if (isset($this->cloudinary) && $this->cloudinary->configured()) {
+                $upload_src = $data_url ?: ('data:' . $mime . ';base64,' . base64_encode($binary));
+                $upload_res = $this->cloudinary->upload($upload_src, 'rentease/avatars');
+                if (!empty($upload_res['url'])) {
+                    $avatar_url = $upload_res['url'];
+                }
+            }
+        } catch (Throwable $e) {}
+
         $this->db->raw(
-            'INSERT INTO user_avatars (user_id, mime, data, byte_size) VALUES (?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE mime = VALUES(mime), data = VALUES(data), byte_size = VALUES(byte_size)',
-            [(int) $user_id, $mime, $binary, strlen($binary)]
+            'INSERT INTO user_avatars (user_id, mime, avatar_url, data, byte_size) VALUES (?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE mime = VALUES(mime), avatar_url = VALUES(avatar_url), data = VALUES(data), byte_size = VALUES(byte_size)',
+            [(int) $user_id, $mime, $avatar_url, $avatar_url ? null : $binary, strlen($binary)]
         );
     }
 
     public function get($user_id)
     {
-        $row = $this->db->raw('SELECT mime, data, byte_size, UNIX_TIMESTAMP(updated_at) AS ts FROM user_avatars WHERE user_id = ? LIMIT 1', [(int) $user_id])
+        $row = $this->db->raw('SELECT mime, avatar_url, data, byte_size, UNIX_TIMESTAMP(updated_at) AS ts FROM user_avatars WHERE user_id = ? LIMIT 1', [(int) $user_id])
             ->fetch(PDO::FETCH_ASSOC);
         if ($row && is_resource($row['data'])) {
             $row['data'] = stream_get_contents($row['data']);
         }
         return $row ?: null;
+    }
+
+    public function get_url($user_id)
+    {
+        $row = $this->db->raw('SELECT avatar_url FROM user_avatars WHERE user_id = ? LIMIT 1', [(int) $user_id])->fetch(PDO::FETCH_ASSOC);
+        return !empty($row['avatar_url']) ? $row['avatar_url'] : null;
     }
 
     public function exists($user_id)

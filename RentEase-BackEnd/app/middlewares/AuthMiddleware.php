@@ -3,17 +3,21 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
 /**
  * AuthMiddleware - requires a valid Bearer (JWT) access token.
- * The Api library re-reads the user's role from the database on every call (jwt_verify_user = TRUE),
- * so disabled accounts lose access immediately. Tenants also lose access when their landlord is disabled.
+ * The middleware loads the user's live role and account status in one database query,
+ * including the active status of the landlord for tenant accounts.
  */
 class AuthMiddleware
 {
     public function handle($next)
     {
+        if (empty($_SERVER['HTTP_AUTHORIZATION']) && empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) && !empty($_GET['token'])) {
+            $_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . $_GET['token'];
+        }
         $api     = lava_instance()->call->library('api');
         $payload = $api->require_jwt();               // 401 + exit when missing / invalid / expired
 
-        $db   = lava_instance()->db;
+        $lava = lava_instance();
+        $db   = $lava->call->database();
         $user = $db->raw(
             "SELECT u.id, u.username, u.email, u.full_name, u.role, u.is_active, u.landlord_id
                FROM users u

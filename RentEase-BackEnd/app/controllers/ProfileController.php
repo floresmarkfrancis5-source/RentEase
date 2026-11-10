@@ -31,6 +31,7 @@ class ProfileController extends BaseApiController
             'role'                 => $u['role'],
             'must_change_password' => (int) $u['must_change_password'] === 1,
             'has_avatar'           => $this->User_avatar_model->exists($u['id']),
+            'avatar_url'           => $this->User_avatar_model->get_url($u['id']),
             'google_linked'        => !empty($u['google_id']),
             'created_at'           => $u['created_at'],
         ];
@@ -98,6 +99,10 @@ class ProfileController extends BaseApiController
         if (!$row) {
             $this->fail('No profile picture.', 404);
         }
+        if (!empty($row['avatar_url'])) {
+            header('Location: ' . $row['avatar_url'], true, 302);
+            exit;
+        }
         header('Cache-Control: private, max-age=0, must-revalidate');
         header('Content-Type: ' . $row['mime']);
         header('Content-Length: ' . strlen($row['data']));
@@ -109,11 +114,12 @@ class ProfileController extends BaseApiController
     {
         $this->api->require_method('PUT');
         $raw = json_decode((string) file_get_contents('php://input'), true);
-        [$bin, $mime, $err] = $this->User_avatar_model->decode_data_url(is_array($raw) ? ($raw['image'] ?? null) : null);
+        $data_url = is_array($raw) ? ($raw['image'] ?? null) : null;
+        [$bin, $mime, $err] = $this->User_avatar_model->decode_data_url($data_url);
         if ($err) {
             $this->fail($err, 422, ['image' => $err]);
         }
-        $this->User_avatar_model->put($this->uid(), $mime, $bin);
+        $this->User_avatar_model->put($this->uid(), $mime, $bin, $data_url);
         $user = $this->User_model->find_by_id($this->uid());
         $this->ok(['message' => 'Profile picture saved', 'user' => $this->payload($user)]);
     }

@@ -20,6 +20,8 @@ class JsonOnlyMiddleware
                 $limit = 4 * 1048576;
             } elseif (preg_match('#/api/admin/leases/\d+/documents/?$#', $path)) {
                 $limit = 7 * 1048576;
+            } elseif (preg_match('#/api/(?:my|admin)/maintenance#', $path)) {
+                $limit = 15 * 1048576;
             } else {
                 $limit = 1048576;
             }

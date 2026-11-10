@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
+import Avatar from '../components/Avatar'
 import Glass from '../components/Glass'
 import PasswordInput from '../components/PasswordInput'
-import { Field } from '../components/ui'
+import { Field, Modal } from '../components/ui'
 import { api } from '../lib/api'
 
 const emptyForm = { username: '', full_name: '', email: '', password: '' }
@@ -10,6 +11,7 @@ export default function SuperadminDashboard() {
   const [landlords, setLandlords] = useState([])
   const [superadmins, setSuperadmins] = useState([])
   const [form, setForm] = useState(emptyForm)
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -63,6 +65,23 @@ export default function SuperadminDashboard() {
     }
   }
 
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setBusy(`delete-${deleteTarget.id}`)
+    setError('')
+    setNotice('')
+    try {
+      const result = await api(`/api/superadmin/landlords/${deleteTarget.id}`, { method: 'DELETE', auth: true })
+      setNotice(result.message)
+      setDeleteTarget(null)
+      await load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy('')
+    }
+  }
+
   async function createSuperadmin(event) {
     event.preventDefault()
     setBusy('create')
@@ -84,26 +103,42 @@ export default function SuperadminDashboard() {
     <section className="superadmin-page">
       <header className="pagehead">
         <div><p className="eyebrow">Platform control</p><h1 className="page-title">Superadmin dashboard</h1>
-          <p className="page-sub">Manage landlord access and trusted platform administrators.</p></div>
+          <p className="page-sub">Manage landlord access, account lifecycles, and trusted platform administrators.</p></div>
       </header>
       {error && <p className="alert alert--error" role="alert">{error}</p>}
       {notice && <p className="alert" role="status">{notice}</p>}
 
       <Glass className="superadmin-card">
-        <div className="superadmin-card__heading"><div><h2>Landlord accounts</h2><p>Send a secure password reset link to the landlord’s registered email.</p></div>
+        <div className="superadmin-card__heading"><div><h2>Landlord accounts</h2><p>Manage, activate, send password resets, or permanently remove landlord accounts.</p></div>
           <button className="btn btn--ghost" onClick={load} disabled={loading}>Refresh</button></div>
         {loading ? <p className="muted">Loading accounts…</p> : landlords.length === 0 ? <p className="muted">No landlord accounts found.</p> : (
           <div className="table-wrap"><table className="data-table"><thead><tr><th>Landlord</th><th>Properties</th><th>Tenants</th><th>State</th><th>Actions</th></tr></thead>
             <tbody>{landlords.map((landlord) => <tr key={landlord.id}>
-              <td><strong>{landlord.full_name}</strong><small>{landlord.email} · @{landlord.username}</small></td>
+              <td>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Avatar user={landlord} />
+                  <div>
+                    <strong>{landlord.full_name}</strong>
+                    <small style={{ display: 'block' }}>{landlord.email} · @{landlord.username}</small>
+                  </div>
+                </div>
+              </td>
               <td>{landlord.property_count}</td><td>{landlord.tenant_count}</td>
               <td>{Number(landlord.is_active) ? 'Active' : 'Inactive'}</td>
               <td className="superadmin-actions">
-                <button className="btn btn--ghost" disabled={!!busy || !Number(landlord.is_active)} onClick={() => sendReset(landlord)}>
-                  {busy === `reset-${landlord.id}` ? 'Sending…' : 'Send reset link'}
+                <button className="btn btn--ghost btn--sm" disabled={!!busy || !Number(landlord.is_active)} onClick={() => sendReset(landlord)}>
+                  {busy === `reset-${landlord.id}` ? 'Sending…' : 'Send reset'}
                 </button>
-                <button className="btn btn--ghost" disabled={!!busy} onClick={() => toggleAccount('landlord', landlord)}>
+                <button className="btn btn--ghost btn--sm" disabled={!!busy} onClick={() => toggleAccount('landlord', landlord)}>
                   {busy === `landlord-${landlord.id}` ? 'Saving…' : Number(landlord.is_active) ? 'Deactivate' : 'Activate'}
+                </button>
+                <button
+                  className="btn btn--ghost btn--sm"
+                  style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.35)' }}
+                  disabled={!!busy}
+                  onClick={() => setDeleteTarget(landlord)}
+                >
+                  Delete
                 </button>
               </td>
             </tr>)}</tbody></table></div>
@@ -130,7 +165,15 @@ export default function SuperadminDashboard() {
         <Glass className="superadmin-card">
           <h2>Superadmin access</h2>
           {loading ? <p className="muted">Loading accounts…</p> : <ul className="superadmin-list">{superadmins.map((account) => (
-            <li key={account.id}><div><strong>{account.full_name}</strong><small>{account.email} · @{account.username}</small><small>{Number(account.is_active) ? 'Active' : 'Inactive'}</small></div>
+            <li key={account.id}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Avatar user={account} />
+                <div>
+                  <strong>{account.full_name}</strong>
+                  <small style={{ display: 'block' }}>{account.email} · @{account.username}</small>
+                  <small style={{ display: 'block' }}>{Number(account.is_active) ? 'Active' : 'Inactive'}</small>
+                </div>
+              </div>
               <button className="btn btn--ghost" disabled={!!busy} onClick={() => toggleAccount('superadmin', account)}>
                 {busy === `superadmin-${account.id}` ? 'Saving…' : Number(account.is_active) ? 'Deactivate' : 'Activate'}
               </button>
@@ -139,6 +182,54 @@ export default function SuperadminDashboard() {
           <p className="field__hint">The system prevents deactivating the last active superadmin.</p>
         </Glass>
       </div>
+
+      {deleteTarget && (
+        <Modal title="Delete Landlord Account" onClose={() => !busy && setDeleteTarget(null)}>
+          <div className="stack" style={{ gap: '16px', padding: '4px 0' }}>
+            <p>
+              Are you sure you want to permanently delete the landlord account for{' '}
+              <strong>{deleteTarget.full_name || deleteTarget.username}</strong> (@{deleteTarget.username})?
+            </p>
+
+            <div style={{ background: 'var(--page-raised)', padding: '12px 16px', borderRadius: '8px', fontSize: '.9rem' }}>
+              <div><strong>Email:</strong> {deleteTarget.email}</div>
+              <div style={{ marginTop: '4px' }}>
+                <strong>Properties:</strong> {deleteTarget.property_count} &nbsp;·&nbsp; <strong>Tenants:</strong> {deleteTarget.tenant_count}
+              </div>
+            </div>
+
+            {(Number(deleteTarget.property_count) > 0 || Number(deleteTarget.tenant_count) > 0) ? (
+              <div className="alert alert--error" style={{ margin: 0 }}>
+                <strong>⚠️ Warning:</strong> This landlord owns <strong>{deleteTarget.property_count}</strong> propert{Number(deleteTarget.property_count) === 1 ? 'y' : 'ies'} and <strong>{deleteTarget.tenant_count}</strong> tenant{Number(deleteTarget.tenant_count) === 1 ? '' : 's'}. Deleting this account will permanently delete all associated properties, units, leases, bills, maintenance requests, and tenant records.
+              </div>
+            ) : (
+              <p className="muted" style={{ fontSize: '.88rem', margin: 0 }}>
+                This landlord has no active properties or tenants. Their account will be permanently removed.
+              </p>
+            )}
+
+            <div className="modal__foot" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px' }}>
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={() => setDeleteTarget(null)}
+                disabled={!!busy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn"
+                style={{ background: '#dc2626', color: '#fff', borderColor: '#b91c1c' }}
+                onClick={confirmDelete}
+                disabled={!!busy}
+              >
+                {busy === `delete-${deleteTarget.id}` ? 'Deleting…' : 'Delete landlord permanently'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </section>
   )
 }

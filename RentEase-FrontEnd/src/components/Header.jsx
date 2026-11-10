@@ -5,8 +5,11 @@ import Avatar from './Avatar'
 import Brand from './Brand'
 import NotificationBell from './NotificationBell'
 import ThemeToggle from './ThemeToggle'
+import LanguagePicker from './LanguagePicker'
+import { useLanguage } from '../context/LanguageContext'
 
 function AccountMenu({ user, onLogout }) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const box = useRef(null)
   const loc = useLocation()
@@ -22,7 +25,7 @@ function AccountMenu({ user, onLogout }) {
   }, [open])
 
   const home = user.role === 'superadmin' ? '/superadmin' : user.role === 'admin' ? '/admin' : '/tenant'
-  const roleLabel = user.role === 'superadmin' ? 'Superadmin' : user.role === 'admin' ? 'Landlord' : 'Tenant'
+  const roleLabel = t(user.role === 'superadmin' ? 'Superadmin' : user.role === 'admin' ? 'Landlord' : 'Tenant')
   return (
     <div className="acct" ref={box}>
       <button type="button" className="acct-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
@@ -40,11 +43,11 @@ function AccountMenu({ user, onLogout }) {
               <small className="acct-role">{roleLabel} · @{user.username}</small>
             </div>
           </div>
-          <Link role="menuitem" to={home}>{roleLabel === 'Superadmin' ? 'Platform control' : roleLabel === 'Landlord' ? 'Landlord dashboard' : 'My rent'}</Link>
-          <Link role="menuitem" to="/profile">My profile</Link>
-          {user.role === 'admin' && <Link role="menuitem" to="/admin/settings">Site settings</Link>}
-          <Link role="menuitem" to="/change-password">Change password</Link>
-          <button type="button" role="menuitem" className="danger" onClick={onLogout}>Log out</button>
+          <Link role="menuitem" to={home}>{t(user.role === 'superadmin' ? 'Platform control' : user.role === 'admin' ? 'Landlord dashboard' : 'My rent')}</Link>
+          <Link role="menuitem" to="/profile">{t('My profile')}</Link>
+          {user.role === 'admin' && <Link role="menuitem" to="/admin/settings">{t('Site settings')}</Link>}
+          <Link role="menuitem" to="/change-password">{t('Change password')}</Link>
+          <button type="button" role="menuitem" className="danger" onClick={onLogout}>{t('Log out')}</button>
         </div>
       )}
     </div>
@@ -52,6 +55,7 @@ function AccountMenu({ user, onLogout }) {
 }
 
 export default function Header() {
+  const { t } = useLanguage()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -72,11 +76,12 @@ export default function Header() {
     <header className={`site-header${onHero ? ' on-hero' : ''}`}>
       <div className="wrap">
         <Brand />
-        <nav className="nav" aria-label="Main">
-          <NavLink to="/" end className="nav-link">Home</NavLink>
-          {ready && <NavLink to={user.role === 'superadmin' ? '/superadmin' : user.role === 'admin' ? '/admin' : '/tenant'} className="nav-link">{user.role === 'superadmin' ? 'Platform' : user.role === 'admin' ? 'Dashboard' : 'My rent'}</NavLink>}
-          {!user && <NavLink to="/login" className="nav-link">Log in</NavLink>}
+        <nav className="nav" aria-label={t('Main navigation')}>
+          <NavLink to="/" end className="nav-link">{t('Home')}</NavLink>
+          {ready && <NavLink to={user.role === 'superadmin' ? '/superadmin' : user.role === 'admin' ? '/admin' : '/tenant'} className="nav-link">{t(user.role === 'superadmin' ? 'Platform' : user.role === 'admin' ? 'Dashboard' : 'My rent')}</NavLink>}
+          {!user && <NavLink to="/login" className="nav-link">{t('Log in')}</NavLink>}
           {user && <AccountMenu user={user} onLogout={() => { logout(); navigate('/') }} />}
+          <LanguagePicker />
           {ready && user.role !== 'superadmin' && <NotificationBell user={user} />}
           <ThemeToggle />
         </nav>

@@ -61,8 +61,9 @@ $router->add_global_middleware(['security_headers', 'throttle', 'json_only']);
 */
 $router->get('/', 'Welcome::index');
 $router->get('api/health', 'Welcome::health');
-$router->get('api/assets/{key}', 'AssetController::show'); // uploaded logo / hero / login images (public)
-$router->get('api/settings', 'SettingsController::show');      // branding/theme for the whole site
+$router->get('api/health/ready', 'Welcome::ready');
+$router->get('api/assets/{key}', 'AssetController::show'); // public tenant-facing image, scoped by owner query
+$router->get('api/settings', 'SettingsController::show'); // fixed RentEase defaults
 
 // Authentication (strict throttle: 10 tries / minute / IP)
 $router->post('api/auth/login',   'AuthController::login')->middleware('throttle_auth');
@@ -72,6 +73,9 @@ $router->post('api/auth/google/register', 'AuthController::google_register')->mi
 $router->post('api/auth/refresh', 'AuthController::refresh')->middleware('throttle_auth');
 $router->post('api/auth/password/forgot', 'PasswordResetController::request')->middleware('throttle_auth');
 $router->post('api/auth/password/reset', 'PasswordResetController::reset')->middleware('throttle_auth');
+$router->get('api/auth/tenant/invitation', 'AuthController::verify_tenant_invitation')->middleware('throttle_auth');
+$router->post('api/auth/tenant/activate', 'AuthController::activate_tenant')->middleware('throttle_auth');
+$router->post('api/auth/tenant/activate-google', 'AuthController::activate_tenant_google')->middleware('throttle_auth');
 
 // Server-to-server endpoints (each protected by its own middleware)
 $router->post('api/webhooks/paymongo', 'WebhookController::paymongo')->middleware('paymongo_webhook');
@@ -86,6 +90,7 @@ $router->post('api/cron/reminders',    'CronController::reminders')->middleware(
 $router->group(['middleware' => ['auth']], function ($router) {
     $router->post('api/auth/logout',          'AuthController::logout');
     $router->get('api/auth/me',               'AuthController::me');
+    $router->get('api/my/settings',           'SettingsController::show_for_user');
     $router->post('api/auth/change-password', 'AuthController::change_password');
     // My profile (landlord and tenant)
     $router->get('api/profile',           'ProfileController::show');
@@ -95,6 +100,7 @@ $router->group(['middleware' => ['auth']], function ($router) {
     $router->delete('api/profile/photo',  'ProfileController::photo_delete');
     $router->get('api/bills/{id}/statement',  'BillController::statement');
     $router->get('api/payments/{id}/receipt', 'PaymentController::receipt');
+    $router->get('api/maintenance/images/{id}', 'MaintenanceController::image_show');
 });
 
 /*
@@ -112,20 +118,28 @@ $router->group(['prefix' => 'api/admin', 'middleware' => ['auth', 'admin']], fun
     $router->delete('assistant/conversations/{id}', 'AssistantController::delete_conversation');
     $router->post('assistant/conversations/{id}/confirmation', 'AssistantController::record_confirmation');
     $router->post('assistant/chat', 'AssistantController::chat');
+    $router->post('assistant/insights', 'AssistantController::insights');
+    $router->post('assistant/units', 'AssistantController::add_units');
     $router->get('dashboard',     'DashboardController::index');
     $router->get('notifications', 'DashboardController::notifications');
     $router->get('in-app-notifications', 'InAppNotificationController::index');
     $router->get('in-app-notifications/unread-count', 'InAppNotificationController::unread_count');
+    $router->get('in-app-notifications/sidebar-counts', 'InAppNotificationController::sidebar_counts');
+    $router->patch('in-app-notifications/sections/{section}/read', 'InAppNotificationController::mark_section_read');
     $router->patch('in-app-notifications/read-all', 'InAppNotificationController::mark_all_read');
     $router->patch('in-app-notifications/{id}/read', 'InAppNotificationController::mark_read');
     $router->get('transfer-requests', 'UnitTransferController::admin_index');
     $router->patch('transfer-requests/{id}', 'UnitTransferController::decide');
+    $router->delete('transfer-requests/{id}', 'UnitTransferController::admin_delete');
+    $router->get('early-move-requests', 'EarlyMoveInController::admin_index');
+    $router->patch('early-move-requests/{id}', 'EarlyMoveInController::decide');
+    $router->delete('early-move-requests/{id}', 'EarlyMoveInController::admin_delete');
 
     // Site settings (name, theme colors, hero, glass look)
     $router->put('settings',          'SettingsController::update');
     $router->post('settings/reset',   'SettingsController::reset');
     $router->get('settings/history',  'SettingsController::history');
-    $router->put('settings/image',    'SettingsController::image_upload');        // logo / hero / login picture
+    $router->put('settings/image',    'SettingsController::image_upload');        // sidebar logo / tenant hero
     $router->delete('settings/image/{key}', 'SettingsController::image_delete');
 
     // Properties -> Units -> Tenants -> Leases
@@ -149,9 +163,12 @@ $router->group(['prefix' => 'api/admin', 'middleware' => ['auth', 'admin']], fun
     $router->put('tenants/{id}',                  'TenantController::update');
     $router->patch('tenants/{id}',                'TenantController::update');
     $router->post('tenants/{id}/reset-password',  'TenantController::reset_password');
+    $router->post('tenants/{id}/resend-invite',   'TenantController::resend_invite');
+    $router->post('tenants/{id}/reassign-unit',   'TenantController::reassign_unit');
     $router->delete('tenants/{id}',               'TenantController::destroy');
 
     $router->get('leases',            'LeaseController::index');
+    $router->get('leases/financials', 'LeaseController::financials');
     $router->post('leases',           'LeaseController::store');
     $router->get('leases/{id}/history', 'LeaseController::history');
     $router->get('leases/{id}/documents', 'LeaseController::documents');
@@ -163,6 +180,7 @@ $router->group(['prefix' => 'api/admin', 'middleware' => ['auth', 'admin']], fun
     $router->put('leases/{id}',       'LeaseController::update');
     $router->patch('leases/{id}',     'LeaseController::update');
     $router->post('leases/{id}/end',  'LeaseController::end');
+    $router->post('leases/{id}/cancel', 'LeaseController::cancel');
     $router->delete('leases/{id}',    'LeaseController::destroy');
 
     // Billing & payments
@@ -170,6 +188,7 @@ $router->group(['prefix' => 'api/admin', 'middleware' => ['auth', 'admin']], fun
     $router->post('bills/generate',       'BillController::generate');
     $router->get('bills/{id}',            'BillController::show');
     $router->post('bills/{id}/remind',    'BillController::remind');
+    $router->patch('bills/{id}',          'BillController::adjust');
     $router->delete('bills/{id}',         'BillController::destroy');
     $router->get('payments',              'PaymentController::index');
     $router->post('payments',             'PaymentController::store');
@@ -178,6 +197,7 @@ $router->group(['prefix' => 'api/admin', 'middleware' => ['auth', 'admin']], fun
     $router->get('maintenance',           'MaintenanceController::index');
     $router->patch('maintenance/{id}',    'MaintenanceController::update');
     $router->put('maintenance/{id}',      'MaintenanceController::update');
+    $router->delete('maintenance/{id}',   'MaintenanceController::delete');
 });
 
 /*
@@ -188,6 +208,7 @@ $router->group(['prefix' => 'api/admin', 'middleware' => ['auth', 'admin']], fun
 $router->group(['prefix' => 'api/superadmin', 'middleware' => ['auth', 'superadmin']], function ($router) {
     $router->get('landlords', 'SuperadminController::landlords');
     $router->patch('landlords/{id}', 'SuperadminController::update_landlord');
+    $router->delete('landlords/{id}', 'SuperadminController::delete_landlord');
     $router->post('landlords/{id}/send-password-reset', 'SuperadminController::send_landlord_reset');
     $router->get('accounts', 'SuperadminController::superadmins');
     $router->post('accounts', 'SuperadminController::create_superadmin');
@@ -201,15 +222,21 @@ $router->group(['prefix' => 'api/superadmin', 'middleware' => ['auth', 'superadm
 */
 $router->group(['prefix' => 'api/my', 'middleware' => ['auth', 'tenant']], function ($router) {
     $router->get('summary',                  'TenantPortalController::summary');
+    $router->post('leases/{id}/accept', 'TenantPortalController::accept_lease_offer');
     $router->get('bills',                    'TenantPortalController::bills');
     $router->post('bills/{id}/pay',          'TenantPortalController::pay');
     $router->get('payments',                 'TenantPortalController::payments');
     $router->post('payments/{id}/verify',    'TenantPortalController::verify');
     $router->get('maintenance',              'TenantPortalController::maintenance_index');
     $router->post('maintenance',             'TenantPortalController::maintenance_store');
+    $router->delete('maintenance/{id}',        'TenantPortalController::maintenance_delete');
     $router->get('available-units',          'UnitTransferController::available_units');
     $router->get('transfer-requests',         'UnitTransferController::tenant_index');
     $router->post('transfer-requests',        'UnitTransferController::store');
+    $router->delete('transfer-requests/{id}', 'UnitTransferController::tenant_delete');
+    $router->get('early-move-requests', 'EarlyMoveInController::tenant_index');
+    $router->post('early-move-requests', 'EarlyMoveInController::store');
+    $router->delete('early-move-requests/{id}', 'EarlyMoveInController::tenant_delete');
     $router->get('notifications',             'InAppNotificationController::index');
     $router->get('notifications/unread-count', 'InAppNotificationController::unread_count');
     $router->patch('notifications/read-all',  'InAppNotificationController::mark_all_read');

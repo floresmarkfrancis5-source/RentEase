@@ -163,7 +163,6 @@ class Api
         $this->_lava = lava_instance();
         $this->_lava->call->library('cache');
         $this->_lava->config->load('api');
-        $this->_lava->call->database();
 
         if (!config_item('api_helper_enabled')) {
             show_error('Api Helper is disabled or set up incorrectly.');
@@ -197,6 +196,12 @@ class Api
         }
 
         handle_cors();
+    }
+
+    private function ensure_database()
+    {
+        $this->_lava = lava_instance();
+        $this->_lava->call->database();
     }
 
     /**
@@ -554,6 +559,7 @@ class Api
         }
 
         if ($this->verify_user) {
+            $this->ensure_database();
             $stmt = $this->_lava->db->raw(
                 "SELECT id, role FROM {$this->users_table} WHERE id = ? LIMIT 1",
                 [$payload['sub']]
@@ -583,6 +589,7 @@ class Api
      */
     public function issue_tokens($user_data)
     {
+        $this->ensure_database();
         $user_id = $user_data['id'];
         $now     = time();
         $scopes  = $user_data['scopes'] ?? ['read'];
@@ -632,6 +639,7 @@ class Api
      */
     public function refresh_access_token($refresh_token)
     {
+        $this->ensure_database();
         // Only a token explicitly typed as "refresh" is accepted here.
         $payload = $this->validate_jwt($refresh_token, 'refresh');
         if (!$payload) {
@@ -683,6 +691,7 @@ class Api
      */
     public function revoke_refresh_token($refresh_token)
     {
+        $this->ensure_database();
         $hashed = hash_hmac('sha256', $refresh_token, $this->refresh_token_key);
         $this->_lava->db->raw(
             "DELETE FROM {$this->refresh_token_table} WHERE token = ?",
@@ -698,6 +707,7 @@ class Api
      */
     public function cleanup_expired_refresh_tokens($user_id = null): void
     {
+        $this->ensure_database();
         $sql = "DELETE FROM {$this->refresh_token_table} WHERE expires_at < NOW()";
         $params = [];
 

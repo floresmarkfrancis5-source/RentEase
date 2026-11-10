@@ -1,6 +1,6 @@
 import { API_URL } from './api'
 
-/** Uploaded images are stored as "/api/assets/logo?v=123" (served by the API); external links are used as-is. */
+/** Uploaded images use an owner-scoped API URL; external links are used as-is. */
 export const assetUrl = (u) => {
   const v = String(u || '').trim()
   if (!v) return ''

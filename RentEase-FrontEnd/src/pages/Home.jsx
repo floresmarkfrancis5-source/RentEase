@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import Hero from '../components/Hero'
 import { Reveal } from '../components/motion'
 import Preloader from '../components/Preloader'
 import { useSettings } from '../context/SettingsContext'
 
-const MARQUEE = ['Monthly billing', 'Pay with GCash & card', 'PDF receipts', 'Email reminders', 'Repair requests', 'Property map']
+const MARQUEE = ['Monthly billing', 'Pay with GCash & card', 'Downloadable receipts', 'Email reminders', 'Repair requests', 'Property map']
 
 /** Small "screenshots" drawn with markup, so no image files are needed. */
 const Mock = {
@@ -45,29 +46,49 @@ const Mock = {
 const CARDS = [
   { tag: 'Properties', title: 'Everything in one record', text: 'Properties, units, tenants and leases — with the map location of each building — instead of scattered notebooks and chat threads.', Art: Mock.Bills },
   { tag: 'Billing', title: 'Bills that write themselves', text: 'One bill per tenant every month, with due dates and automatic overdue tracking. Run it twice and it never double-bills.', Art: Mock.Bill },
-  { tag: 'Payments', title: 'Pay rent from the phone', text: 'Tenants pay with GCash, Maya or card. The bill turns Paid on its own and an official PDF receipt is emailed.', Art: Mock.Pay },
+  { tag: 'Payments', title: 'Pay rent from the phone', text: 'Tenants pay with GCash, Maya or card. The bill turns Paid on its own and an official receipt is emailed.', Art: Mock.Pay },
   { tag: 'Maintenance', title: 'Repairs nobody forgets', text: 'Tenants report what is broken; you update the status and they are notified. A clear trail for both sides.', Art: Mock.Fix },
 ]
 
 const FACTS = [
   ['GCash · Maya', 'Card payments'],
-  ['PDF', 'Official receipts'],
+  ['Downloadable receipts', 'Available anytime'],
   ['Auto', 'Monthly billing'],
   ['Light / Dark', 'Your choice'],
 ]
 
 export default function Home() {
-  const { settings: s } = useSettings()
+  const { settings } = useSettings()
+  const { user } = useAuth()
   const [play, setPlay] = useState(false)
+  const tenantHome = user?.role === 'tenant'
+  const s = tenantHome ? settings : {
+    ...settings,
+    site_name: 'RentEase',
+    site_tagline: 'Rental billing, made effortless',
+    hero_title: 'Rent collection, without the notebook.',
+    hero_subtitle: 'Units, tenants, monthly billing, online payments and repair requests — in one calm, centralized place.',
+    hero_cta_text: 'Get started',
+    hero_image_url: '',
+    logo_url: '',
+  }
+
+  if (tenantHome) {
+    return <Hero s={s} tenant play />
+  }
 
   return (
     <>
       <Preloader onDone={() => setPlay(true)} />
-      <Hero s={s} play={play} />
+      <Hero s={s} play={play} defaultImage />
 
       <div className="marquee" aria-hidden="true">
         <div className="marquee-track">
-          {[0, 1].map((k) => <div className="mq" key={k}>{MARQUEE.map((m) => <span key={m}>{m}</span>)}</div>)}
+          {[0, 1, 2, 3].map((k) => (
+            <div className="mq" key={k}>
+              {MARQUEE.map((m) => <span key={m}>{m}</span>)}
+            </div>
+          ))}
         </div>
       </div>
 

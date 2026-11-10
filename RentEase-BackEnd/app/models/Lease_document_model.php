@@ -19,14 +19,14 @@ class Lease_document_model extends Model
     public function decode_pdf($data_url)
     {
         if (!is_string($data_url) || !preg_match('#^data:application/pdf;base64,([A-Za-z0-9+/]+={0,2})$#', $data_url, $match)) {
-            return [null, 'Upload a valid PDF document.'];
+            return [null, 'Choose a valid lease document file.'];
         }
         $binary = base64_decode($match[1], true);
         if ($binary === false || $binary === '' || strlen($binary) > self::MAX_BYTES) {
-            return [null, 'PDFs must be no larger than 5 MB.'];
+            return [null, 'Lease documents must be no larger than 5 MB.'];
         }
         if (substr($binary, 0, 5) !== '%PDF-') {
-            return [null, 'The selected file is not a valid PDF.'];
+            return [null, 'This lease document file is not supported.'];
         }
         return [$binary, null];
     }

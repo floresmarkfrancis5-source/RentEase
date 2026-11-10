@@ -15,7 +15,7 @@ class Notifier
         $this->_lava = lava_instance();
         $this->_lava->call->library('mailer');
         $this->_lava->call->library('pdf');
-        foreach (['User_model', 'Bill_model', 'Payment_model', 'Maintenance_model', 'Site_setting_model', 'Inapp_notification_model', 'Unit_transfer_model'] as $m) {
+        foreach (['User_model', 'Bill_model', 'Payment_model', 'Maintenance_model', 'Maintenance_image_model', 'Site_setting_model', 'Inapp_notification_model', 'Unit_transfer_model'] as $m) {
             $this->_lava->call->model($m);
         }
     }
@@ -44,24 +44,46 @@ class Notifier
         return '₱' . number_format((float) $n, 2);
     }
 
-    public function welcome($user_id)
+    public function welcome($user_id, $raw_token = null, $unit_name = null)
     {
         try {
             $u = $this->_lava->User_model->find_by_id($user_id);
-            if (!$u) return;
+            if (!$u) return 'failed';
             $site = $this->site();
-            $html = $this->render([
-                'title'      => 'Welcome to ' . $site['name'],
-                'greeting'   => 'Hi ' . ($u['full_name'] ?: $u['username']) . ',',
-                'paragraphs' => [
-                    'Your landlord created a ' . $site['name'] . ' account for you. You can see your balance, pay rent online, download receipts and report repairs.',
-                    'Sign in with this email address (' . $u['email'] . ') using the temporary password your landlord gave you, or with Google. You will be asked to choose a new password.',
-                ],
-                'button_text' => 'Open ' . $site['name'],
-                'button_url'  => $this->frontend('/login'),
-            ]);
-            $this->_lava->mailer->send($u['id'], 'welcome', $u['id'], $u['email'], 'Your ' . $site['name'] . ' account', $html);
-        } catch (Throwable $e) { /* logged by Mailer where relevant */ }
+
+            if ($raw_token) {
+                $activate_url = $this->frontend('/activate?token=' . rawurlencode($raw_token));
+                $html = $this->render([
+                    'title'       => 'Activate your tenant account',
+                    'greeting'    => 'Hi ' . ($u['full_name'] ?: $u['username']) . ',',
+                    'paragraphs'  => [
+                        'Your landlord created a ' . $site['name'] . ' tenant account for you' . ($unit_name ? ' for ' . $unit_name : '') . '. You can view your balance, pay rent, download billing statements and report repairs online.',
+                        'Please verify your email address and create your password by clicking the button below. This activation link is valid for 7 days.',
+                        'You can also activate and link your Google Account directly on the activation page.',
+                    ],
+                    'button_text' => 'Activate Account & Set Password',
+                    'button_url'  => $activate_url,
+                ]);
+                $subject = 'Activate your ' . $site['name'] . ' account' . ($unit_name ? ' (' . $unit_name . ')' : '');
+            } else {
+                $html = $this->render([
+                    'title'      => 'Welcome to ' . $site['name'],
+                    'greeting'   => 'Hi ' . ($u['full_name'] ?: $u['username']) . ',',
+                    'paragraphs' => [
+                        'Your landlord created a ' . $site['name'] . ' account for you. You can see your balance, pay rent online, download receipts and report repairs.',
+                        'Sign in with this email address (' . $u['email'] . ') using the temporary password your landlord gave you, or with Google. You will be asked to choose a new password.',
+                    ],
+                    'button_text' => 'Open ' . $site['name'],
+                    'button_url'  => $this->frontend('/login'),
+                ]);
+                $subject = 'Your ' . $site['name'] . ' account';
+            }
+
+            return $this->_lava->mailer->send($u['id'], 'welcome', $u['id'], $u['email'], $subject, $html);
+        } catch (Throwable $e) {
+            error_log('RentEase welcome notification failed for user id ' . (int) $user_id . ': ' . $e->getMessage());
+            return 'failed';
+        }
     }
 
     public function due_reminder($bill_id)
@@ -159,6 +181,55 @@ class Notifier
         } catch (Throwable $e) { /* ignore */ }
     }
 
+    public function new_maintenance_request($request_id)
+    {
+        try {
+            $m = $this->_lava->Maintenance_model->find($request_id);
+            if (!$m || empty($m['landlord_id'])) return;
+
+            $landlord = $this->_lava->User_model->find_by_id($m['landlord_id']);
+            if (!$landlord || empty($landlord['email'])) return;
+
+            $images = [];
+            if (isset($this->_lava->Maintenance_image_model)) {
+                $images = $this->_lava->Maintenance_image_model->list_for_request($request_id);
+            }
+            $img_count = count($images);
+
+            $priority_labels = ['low' => 'Low', 'medium' => 'Medium', 'high' => 'Urgent / High'];
+            $priority_label = $priority_labels[$m['priority']] ?? ucfirst($m['priority']);
+
+            $paragraphs = [
+                'A new repair request has been submitted by ' . ($m['tenant_name'] ?: 'your tenant') . ' for ' . $m['unit_name'] . ' at ' . $m['property_name'] . '.',
+                'Issue description: "' . $m['description'] . '"',
+            ];
+            if ($img_count > 0) {
+                $paragraphs[] = '📸 ' . $img_count . ' photo' . ($img_count > 1 ? 's' : '') . ' attached with the repair request. You can inspect photos and manage repairs in your landlord dashboard.';
+            }
+
+            $rows = [
+                ['Issue', $m['title']],
+                ['Property & Unit', $m['property_name'] . ' - ' . $m['unit_name']],
+                ['Tenant', ($m['tenant_name'] ?: 'Tenant') . ' (' . $m['tenant_email'] . ')'],
+                ['Priority', $priority_label],
+                ['Photos attached', $img_count > 0 ? $img_count . ' photo' . ($img_count > 1 ? 's' : '') : 'None'],
+                ['Submitted at', date('F j, Y g:i A', strtotime($m['created_at'] ?? 'now'))],
+            ];
+
+            $html = $this->render([
+                'title'       => 'New Repair Request: ' . $m['title'],
+                'greeting'    => 'Hi ' . ($landlord['full_name'] ?: $landlord['username']) . ',',
+                'paragraphs'  => $paragraphs,
+                'rows'        => $rows,
+                'button_text' => 'Review Request in Dashboard',
+                'button_url'  => $this->frontend('/admin/maintenance'),
+            ]);
+
+            $subject = 'New Repair Request: ' . $m['title'] . ' (' . $m['unit_name'] . ')';
+            $this->_lava->mailer->send($landlord['id'], 'new_maintenance_request', $m['id'], $landlord['email'], $subject, $html);
+        } catch (Throwable $e) { /* email failure should never break request creation */ }
+    }
+
     public function transfer_result($request_id)
     {
         try {
@@ -175,6 +246,42 @@ class Notifier
                 $r['id']
             );
         } catch (Throwable $e) { /* logged by the API request where relevant */ }
+    }
+
+    public function tenant_unit_reassigned($tenant_id, $old_unit_label, $new_unit_label, $new_rent, $notes = null)
+    {
+        try {
+            $u = $this->_lava->User_model->find_by_id($tenant_id);
+            if (!$u) return;
+
+            $this->_lava->Inapp_notification_model->create(
+                $tenant_id,
+                'unit_reassigned',
+                'Your unit has been reassigned',
+                "Your landlord moved you from {$old_unit_label} to {$new_unit_label}." . ($notes ? ' Note: ' . $notes : ''),
+                null
+            );
+
+            $paragraphs = [
+                "Your landlord has moved your room/unit to {$new_unit_label}.",
+                "Previous Unit: {$old_unit_label}",
+                "New Monthly Rent: " . $this->peso($new_rent),
+            ];
+            if ($notes) {
+                $paragraphs[] = "Landlord Note: \"{$notes}\"";
+            }
+            $paragraphs[] = "Please review your updated lease in your tenant portal.";
+
+            $html = $this->render([
+                'title'       => 'Notice of Unit Reassignment',
+                'greeting'    => 'Hi ' . ($u['full_name'] ?: $u['username']) . ',',
+                'paragraphs'  => $paragraphs,
+                'button_text' => 'View My Rent & Lease',
+                'button_url'  => $this->frontend('/tenant/transfers'),
+            ]);
+
+            $this->_lava->mailer->send($tenant_id, 'unit_reassigned', null, $u['email'], 'Notice of Unit Reassignment - RentEase', $html);
+        } catch (Throwable $e) { /* notification error should not break operation */ }
     }
 
     /** Data used by the receipt view (shared with the PDF download endpoint). */

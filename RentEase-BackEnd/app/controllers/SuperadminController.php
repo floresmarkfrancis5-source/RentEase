@@ -28,6 +28,17 @@ class SuperadminController extends BaseApiController
         $this->ok(['message' => $data['is_active'] ? 'Landlord account activated.' : 'Landlord account deactivated.']);
     }
 
+    public function delete_landlord($id)
+    {
+        $this->api->require_method('DELETE');
+        $landlord = $this->not_found_unless($this->User_model->find_landlord($id), 'Landlord');
+
+        $this->User_model->delete_landlord($landlord['id']);
+
+        $name = !empty($landlord['full_name']) ? $landlord['full_name'] : $landlord['username'];
+        $this->ok(['message' => "Landlord account '{$name}' and all associated records have been permanently deleted."]);
+    }
+
     public function send_landlord_reset($id)
     {
         $this->api->require_method('POST');

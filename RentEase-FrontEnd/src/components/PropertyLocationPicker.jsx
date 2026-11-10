@@ -4,6 +4,8 @@ import 'leaflet/dist/leaflet.css'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+import { useLanguage } from '../context/LanguageContext'
+import HelpTip from './HelpTip'
 
 const PSGC_BASE = 'https://psgc.gitlab.io/api'
 const CACHE_TTL = 30 * 24 * 60 * 60 * 1000
@@ -116,6 +118,7 @@ function locality(address = {}) {
 }
 
 function SearchablePlace({ label, value, options, onChange, onSelect, onManual, onBackToList, manual, placeholder, disabled, loading }) {
+  const { t } = useLanguage()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(value)
   useEffect(() => setQuery(value), [value])
@@ -128,10 +131,10 @@ function SearchablePlace({ label, value, options, onChange, onSelect, onManual, 
   if (manual) {
     return (
       <label className="field">
-        <span className="field__label">{label}</span>
-        <input type="text" value={value} disabled={disabled} maxLength={100} placeholder={placeholder}
+        <span className="field__label">{t(label)}</span>
+        <input type="text" value={value} disabled={disabled} maxLength={100} placeholder={t(placeholder)}
           onChange={(event) => onChange(event.target.value)} />
-        {onBackToList && <button type="button" className="location-combobox__back" onClick={onBackToList}>Back to list</button>}
+        {onBackToList && <button type="button" className="location-combobox__back" onClick={onBackToList}>{t('Back to list')}</button>}
       </label>
     )
   }
@@ -139,10 +142,10 @@ function SearchablePlace({ label, value, options, onChange, onSelect, onManual, 
   return (
     <div className="location-combobox">
       <label className="field">
-        <span className="field__label">{label}</span>
+        <span className="field__label">{t(label)}</span>
         <input type="text" role="combobox" aria-expanded={open && filtered.length > 0}
           aria-autocomplete="list" autoComplete="off" value={query} disabled={disabled} maxLength={100}
-          placeholder={loading ? 'Loading official list…' : placeholder}
+          placeholder={loading ? t('Loading official list…') : t(placeholder)}
           onFocus={() => setOpen(true)}
           onBlur={() => window.setTimeout(() => setOpen(false), 120)}
           onChange={(event) => { setQuery(event.target.value); setOpen(true) }}
@@ -169,10 +172,10 @@ function SearchablePlace({ label, value, options, onChange, onSelect, onManual, 
           ))}
           {typed && !exactMatch && (
             <li role="option"><button type="button" onMouseDown={(event) => event.preventDefault()}
-              onClick={() => { onManual(typed); setOpen(false) }}>Use “{typed}”</button></li>
+              onClick={() => { onManual(typed); setOpen(false) }}>{t('Use')} “{typed}”</button></li>
           )}
           <li role="option"><button type="button" onMouseDown={(event) => event.preventDefault()}
-            onClick={() => { onManual(typed); setOpen(false) }}>Can’t find it? Type it manually</button></li>
+            onClick={() => { onManual(typed); setOpen(false) }}>{t('Can’t find it? Type it manually')}</button></li>
         </ul>
       )}
     </div>
@@ -180,6 +183,7 @@ function SearchablePlace({ label, value, options, onChange, onSelect, onManual, 
 }
 
 export default function PropertyLocationPicker({ address, city, barangay: savedBarangay = '', latitude, longitude, onChange }) {
+  const { t } = useLanguage()
   const mapHost = useRef(null)
   const mapRef = useRef(null)
   const markerRef = useRef(null)
@@ -432,26 +436,26 @@ export default function PropertyLocationPicker({ address, city, barangay: savedB
   const barangayOptions = barangays
 
   return (
-    <section className="property-location" aria-label="Property location">
+    <section className="property-location" aria-label={t('Property location')}>
       <div className="property-location__heading">
-        <div><strong>Property location</strong><p className="field__hint">Search an address or move the pin. You can also type locations manually.</p></div>
-        <button type="button" className="btn btn--ghost btn--sm" onClick={locateMe}>◎ Use my location</button>
+        <div><strong>{t('Property location')}<HelpTip text={t('Click the map or drag the pin to set the exact property location.')} label={t('Help about property location')} /></strong><p className="field__hint">{t('Search an address or move the pin. You can also type locations manually.')}</p></div>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={locateMe}>◎ {t('Use my location')}</button>
       </div>
       <form className="property-location__search" onSubmit={searchAddress}>
-        <input aria-label="Search address" type="text" value={search} onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search street, building, or landmark" />
-        <button type="submit" className="btn btn--accent" disabled={searching || !search.trim()}>{searching ? 'Searching…' : 'Search'}</button>
+        <input aria-label={t('Search address')} type="text" value={search} onChange={(event) => setSearch(event.target.value)}
+          placeholder={t('Search street, building, or landmark')} />
+        <button type="submit" className="btn btn--accent" disabled={searching || !search.trim()}>{searching ? `${t('Searching')}…` : t('Search')}</button>
       </form>
       {searchError && <p className="field__hint property-location__notice" role="status">{searchError}</p>}
       {results.length > 0 && (
-        <ul className="property-location__results" aria-label="Address search results">
+        <ul className="property-location__results" aria-label={t('Address search results')}>
           {results.map((result) => (
             <li key={result.place_id}><button type="button" onClick={() => selectResult(result)}>{result.display_name}</button></li>
           ))}
         </ul>
       )}
-      <div className="property-location__map" ref={mapHost} aria-label="Interactive property map" />
-      <p className="field__hint">Click the map or drag the pin to set the exact property location.</p>
+      <div className="property-location__map" ref={mapHost} aria-label={t('Interactive property map')} />
+      <p className="field__hint">{t('Click the map or drag the pin to set the exact property location.')}</p>
       {geoError && <p className="field__hint property-location__notice" role="status">{geoError}</p>}
       <div className="two property-location__places">
         <SearchablePlace label="City / municipality" value={city} options={cityOptions}
@@ -467,8 +471,8 @@ export default function PropertyLocationPicker({ address, city, barangay: savedB
       </div>
       {placeError && <p className="field__hint property-location__notice" role="status">{placeError}</p>}
       <div className="property-location__coordinates" aria-live="polite">
-        <span><strong>Latitude</strong> {point ? point[0].toFixed(6) : 'Not selected'}</span>
-        <span><strong>Longitude</strong> {point ? point[1].toFixed(6) : 'Not selected'}</span>
+        <span><strong>{t('Latitude')}</strong> {point ? point[0].toFixed(6) : t('Not selected')}</span>
+        <span><strong>{t('Longitude')}</strong> {point ? point[1].toFixed(6) : t('Not selected')}</span>
       </div>
     </section>
   )

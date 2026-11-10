@@ -113,15 +113,15 @@ $config['refresh_token_key'] = getenv('REFRESH_TOKEN_KEY') ?: '';
 | Verify User On Each Request
 |--------------------------------------------------------------------------
 |
-| When TRUE, require_jwt() checks that the token's subject exists in the
-| users table and takes role and scopes from the database instead of
-| trusting the token claims. This costs one indexed query per request.
+| AuthMiddleware validates the user's current database record, role, and
+| active status on every private API request. Disable the API helper's
+| duplicate user lookup so authentication only needs one database query.
 |
 | Set to FALSE only if your users are not stored in the table below and
 | you perform your own server-side authorization checks.
 |
 */
-$config['jwt_verify_user'] = TRUE;
+$config['jwt_verify_user'] = FALSE;
 
 /*
 |--------------------------------------------------------------------------

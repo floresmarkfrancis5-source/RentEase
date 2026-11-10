@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { api, authStore } from '../lib/api'
+import { ApiError, api, authStore } from '../lib/api'
 
 const Ctx = createContext(null)
 
@@ -13,6 +13,9 @@ export function AuthProvider({ children }) {
   }, [])
 
   const start = useCallback((r) => {
+    if (!r || typeof r !== 'object' || !r.user || !r.tokens?.access_token) {
+      throw new ApiError('The API returned an invalid sign-in response. Check the API URL and server logs.', 502)
+    }
     authStore.set(r)
     setAuth(r)
     return r.user
@@ -74,9 +77,9 @@ export function AuthProvider({ children }) {
       isAdmin: auth?.user?.role === 'admin',
       isSuperadmin: auth?.user?.role === 'superadmin',
       isTenant: auth?.user?.role === 'tenant',
-      login, loginGoogle, register, registerGoogle, logout, changePassword, updateUser,
+      login, loginGoogle, register, registerGoogle, logout, changePassword, updateUser, startSession: start,
     }),
-    [auth, login, loginGoogle, register, registerGoogle, logout, changePassword, updateUser],
+    [auth, login, loginGoogle, register, registerGoogle, logout, changePassword, updateUser, start],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

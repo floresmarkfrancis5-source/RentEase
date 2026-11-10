@@ -17,7 +17,14 @@ class Bill_model extends Model
     /** Unpaid bills whose due date has passed become "overdue" (called before every read). */
     public function mark_overdue()
     {
-        return $this->db->raw("UPDATE bills SET status = 'overdue' WHERE status = 'unpaid' AND due_date < CURDATE()")->rowCount();
+        return $this->db->raw(
+            "UPDATE bills b JOIN leases l ON l.id = b.lease_id
+                SET b.status = 'overdue',
+                    b.late_fee_amount = l.late_fee,
+                    b.amount = b.amount + l.late_fee
+              WHERE b.status = 'unpaid'
+                AND DATE_ADD(b.due_date, INTERVAL l.grace_period_days DAY) < CURDATE()"
+        )->rowCount();
     }
 
     public function list_bills(array $f = [])
@@ -57,7 +64,8 @@ class Bill_model extends Model
         $label = date('F Y', strtotime($first));
         $days  = (int) date('t', strtotime($first));
 
-        $lease_sql = "SELECT l.id, l.tenant_id, l.monthly_rent, l.due_day, u.unit_name
+        $lease_sql = "SELECT l.id, l.tenant_id, l.monthly_rent, l.due_day, l.start_date,
+                             l.billing_style, l.prorate_first_month, l.grace_period_days, l.late_fee, u.unit_name
                FROM leases l JOIN units u ON u.id = l.unit_id
                JOIN properties p ON p.id = u.property_id
               WHERE l.status = 'active' AND l.start_date <= ? AND (l.end_date IS NULL OR l.end_date >= ?";
@@ -75,11 +83,31 @@ class Bill_model extends Model
         $created = 0;
         $created_bills = [];
         foreach ($leases as $l) {
-            $due = $month . '-' . str_pad((string) min((int) $l['due_day'], $days), 2, '0', STR_PAD_LEFT);
+            $dueDay = (int) $l['due_day'];
+            if ($l['billing_style'] === 'anniversary') {
+                $dueDay = (int) date('j', strtotime($l['start_date']));
+            } elseif ($l['billing_style'] === 'first_of_month') {
+                $dueDay = 1;
+            }
+            $dueDay = min($dueDay, $days);
+            $due = $month . '-' . str_pad((string) $dueDay, 2, '0', STR_PAD_LEFT);
+            $amount = (float) $l['monthly_rent'];
+            $description = "Rent for {$label} - Unit {$l['unit_name']}";
+            if (substr($l['start_date'], 0, 7) === $month && (int) substr($l['start_date'], 8, 2) > 1) {
+                $startDay = (int) substr($l['start_date'], 8, 2);
+                if (!empty($l['prorate_first_month'])) {
+                    $occupiedDays = $days - $startDay + 1;
+                    $amount = round($amount * $occupiedDays / $days, 2);
+                    $description .= " (prorated {$occupiedDays}/{$days} days)";
+                }
+                if ($due < $l['start_date']) {
+                    $due = $l['start_date'];
+                }
+            }
             $insert = $this->db->raw(
                 "INSERT IGNORE INTO bills (lease_id, tenant_id, period_month, description, amount, due_date, status, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, 'unpaid', NOW())",
-                [$l['id'], $l['tenant_id'], $month, "Rent for {$label} - Unit {$l['unit_name']}", $l['monthly_rent'], $due]
+                [$l['id'], $l['tenant_id'], $month, $description, $amount, $due]
             );
             if ($insert->rowCount()) {
                 $created++;
@@ -87,7 +115,7 @@ class Bill_model extends Model
                     'id' => (int) $this->db->last_id(),
                     'tenant_id' => (int) $l['tenant_id'],
                     'unit_name' => $l['unit_name'],
-                    'amount' => (float) $l['monthly_rent'],
+                    'amount' => $amount,
                     'period' => $label,
                 ];
             }
@@ -104,6 +132,31 @@ class Bill_model extends Model
             ->where('status', 'paid')
             ->limit(1)
             ->get();
+    }
+
+    /**
+     * Adjust amount and/or notes on a bill that has NOT been paid yet.
+     * Returns false when nothing to update or the bill is already paid.
+     */
+    public function update_bill($id, array $d, $landlord_id = null)
+    {
+        $allowed = [];
+        if (array_key_exists('amount', $d) && $d['amount'] !== null && is_numeric($d['amount']) && $d['amount'] > 0) {
+            $allowed['amount'] = number_format((float) $d['amount'], 2, '.', '');
+        }
+        if (array_key_exists('notes', $d)) {
+            $allowed['notes'] = $d['notes'] !== '' ? (string) $d['notes'] : null;
+        }
+        if (!$allowed) return false;
+
+        // Verify the bill exists and belongs to the landlord (via property ownership), and is not paid.
+        $check_sql = 'SELECT b.id FROM bills b JOIN leases l ON l.id = b.lease_id JOIN units u ON u.id = l.unit_id JOIN properties p ON p.id = u.property_id WHERE b.id = ? AND b.status <> \'paid\'';
+        $args = [(int) $id];
+        if ($landlord_id !== null) { $check_sql .= ' AND p.owner_id = ?'; $args[] = (int) $landlord_id; }
+        if (!$this->db->raw($check_sql, $args)->fetch(PDO::FETCH_ASSOC)) return false;
+
+        $this->db->table($this->table)->where('id', (int) $id)->update($allowed);
+        return true;
     }
 
     public function delete_bill($id)

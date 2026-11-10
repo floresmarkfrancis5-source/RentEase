@@ -47,6 +47,8 @@ class Property_model extends Model
             'latitude'    => $d['latitude'] ?? null,
             'longitude'   => $d['longitude'] ?? null,
             'description' => $d['description'] ?? null,
+            'image_url'   => $d['image_url'] ?? null,
+            'contract_template' => $d['contract_template'] ?? null,
             'created_at'  => date('Y-m-d H:i:s'),
         ]);
         return (int) $this->db->last_id();
@@ -54,7 +56,7 @@ class Property_model extends Model
 
     public function update_property($id, array $d)
     {
-        $allowed = array_intersect_key($d, array_flip(['name', 'type', 'address', 'city', 'barangay', 'latitude', 'longitude', 'description']));
+        $allowed = array_intersect_key($d, array_flip(['name', 'type', 'address', 'city', 'barangay', 'latitude', 'longitude', 'description', 'image_url', 'contract_template']));
         if (!$allowed) {
             return 0;
         }

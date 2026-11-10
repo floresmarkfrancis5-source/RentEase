@@ -8,15 +8,18 @@ import { compressImage } from '../lib/image'
 
 const HEX = /^#[0-9a-fA-F]{6}$/
 const COLOR_KEYS = ['accent_color', 'header_color', 'hero_color_from', 'hero_color_to']
+const APPEARANCE_SETTING_KEYS = Object.keys(DEFAULT_SETTINGS).filter((key) => !key.startsWith('billing_'))
 
 const PRESETS = [
-  { name: 'Violet Night', accent_color: '#7c4fe0', header_color: '#0d0817', hero_color_from: '#5a2fb8', hero_color_to: '#1a0f2c' },
-  { name: 'Emerald Night', accent_color: '#0f766e', header_color: '#0f172a', hero_color_from: '#0f766e', hero_color_to: '#1e1b4b' },
-  { name: 'Royal Indigo', accent_color: '#4f46e5', header_color: '#1e1b4b', hero_color_from: '#4f46e5', hero_color_to: '#7c3aed' },
-  { name: 'Rose Quartz', accent_color: '#e11d48', header_color: '#4c0519', hero_color_from: '#fb7185', hero_color_to: '#9f1239' },
-  { name: 'Golden Hour', accent_color: '#b45309', header_color: '#292524', hero_color_from: '#f59e0b', hero_color_to: '#78350f' },
-  { name: 'Ocean Glass', accent_color: '#0284c7', header_color: '#082f49', hero_color_from: '#38bdf8', hero_color_to: '#1e3a8a' },
-  { name: 'Pearl', accent_color: '#334155', header_color: '#f1f5f9', hero_color_from: '#cbd5e1', hero_color_to: '#64748b' },
+  { name: 'Modern Barangay', accent_color: '#E05A47', header_color: '#1E4620', hero_color_from: '#1E4620', hero_color_to: '#4A7450' },
+  { name: 'Red Clay', accent_color: '#C9655D', header_color: '#482C2A', hero_color_from: '#8F413B', hero_color_to: '#BE6F60' },
+  { name: 'Warm Orange', accent_color: '#D0703D', header_color: '#4F3628', hero_color_from: '#A35632', hero_color_to: '#C77B44' },
+  { name: 'Soft Marigold', accent_color: '#B18A2E', header_color: '#463A1F', hero_color_from: '#86702E', hero_color_to: '#B39445' },
+  { name: 'Garden Green', accent_color: '#66886A', header_color: '#293F2C', hero_color_from: '#365B3A', hero_color_to: '#6E8F70' },
+  { name: 'Quiet Blue', accent_color: '#5B7D92', header_color: '#293F50', hero_color_from: '#3D6177', hero_color_to: '#7291A0' },
+  { name: 'Soft Indigo', accent_color: '#707BA8', header_color: '#34374F', hero_color_from: '#4A537F', hero_color_to: '#8089AE' },
+  { name: 'Muted Violet', accent_color: '#8B739D', header_color: '#403649', hero_color_from: '#65527B', hero_color_to: '#9583A6' },
+  { name: 'Dusty Pink', accent_color: '#B36E83', header_color: '#49303A', hero_color_from: '#885469', hero_color_to: '#B67A8A' },
 ]
 
 function ColorField({ label, hint, value, onChange, error }) {
@@ -69,9 +72,8 @@ function Text({ label, name, draft, set, errors, multiline, max, placeholder, hi
 
 
 const SLOTS = [
-  { slot: 'logo', key: 'logo_url', label: 'Logo', hint: 'Shown in the header, the intro screen and as the browser tab icon. Square or wide PNG with a transparent background works best.', maxSide: 512, maxBytes: 380 * 1024, keepAlpha: true },
-  { slot: 'hero', key: 'hero_image_url', label: 'Homepage hero image', hint: 'Full-width photo behind the headline. Wide landscape pictures look best (at least 1600 px wide).', maxSide: 1920, maxBytes: 2300 * 1024 },
-  { slot: 'login', key: 'login_image_url', label: 'Login page image', hint: 'Shown beside the login form. Leave it empty to reuse the hero image.', maxSide: 1400, maxBytes: 2300 * 1024 },
+  { slot: 'logo', key: 'logo_url', label: 'Sidebar logo', hint: 'This logo appears only in your dashboard sidebar and your tenants’ sidebars. RentEase branding in the header stays unchanged.', maxSide: 512, maxBytes: 380 * 1024, keepAlpha: true },
+  { slot: 'hero', key: 'hero_image_url', label: 'Tenant homepage image', hint: 'Your tenants see this image on their RentEase homepage. It does not replace the public RentEase information page.', maxSide: 1920, maxBytes: 2300 * 1024 },
 ]
 
 function ImageField({ cfg, value, onLink, onSaved, error }) {
@@ -136,14 +138,19 @@ function ImageField({ cfg, value, onLink, onSaved, error }) {
 function SettingsForm() {
   const { saved, commit, setPreview } = useSettings()
   const [draft, setDraft] = useState(saved)
+  const [touched, setTouched] = useState(false)
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState(null) // {type, text}
   const [history, setHistory] = useState(null)
 
-  const dirty = useMemo(() => Object.keys(DEFAULT_SETTINGS).some((k) => draft[k] !== saved[k]), [draft, saved])
+  const dirty = useMemo(() => APPEARANCE_SETTING_KEYS.some((key) => draft[key] !== saved[key]), [draft, saved])
 
-  // Live preview: the whole site (header, buttons, hero, glass) re-themes as you type.
+  useEffect(() => {
+    if (!touched) setDraft(saved)
+  }, [saved, touched])
+
+  // Preview only this landlord's account theme and tenant homepage.
   useEffect(() => {
     if (!dirty) return setPreview(null)
     const p = { ...draft }
@@ -161,6 +168,7 @@ function SettingsForm() {
   }, [dirty])
 
   const set = (k, v) => {
+    setTouched(true)
     setDraft((d) => ({ ...d, [k]: v }))
     setErrors((e) => (e[k] ? { ...e, [k]: undefined } : e))
     setNotice(null)
@@ -171,12 +179,14 @@ function SettingsForm() {
     setSaving(true)
     setNotice(null)
     try {
-      const r = await api('/api/admin/settings', { method: 'PUT', body: draft, auth: true })
+      const appearanceDraft = Object.fromEntries(APPEARANCE_SETTING_KEYS.map((key) => [key, draft[key]]))
+      const r = await api('/api/admin/settings', { method: 'PUT', body: appearanceDraft, auth: true })
       commit(r.data)
       setDraft({ ...DEFAULT_SETTINGS, ...r.data })
+      setTouched(false)
       setErrors({})
       setHistory(null)
-      setNotice({ type: 'ok', text: r.changed?.length ? 'Settings saved — your site is updated.' : 'Nothing to change.' })
+      setNotice({ type: 'ok', text: r.changed?.length ? 'Settings saved for you and your tenants.' : 'Nothing to change.' })
     } catch (err) {
       setErrors(err.fields || {})
       setNotice({ type: 'error', text: err.status === 422 ? 'Please fix the highlighted fields.' : err.message })
@@ -192,6 +202,7 @@ function SettingsForm() {
       const r = await api('/api/admin/settings/reset', { method: 'POST', auth: true })
       commit(r.data)
       setDraft({ ...DEFAULT_SETTINGS, ...r.data })
+      setTouched(false)
       setErrors({})
       setHistory(null)
       setNotice({ type: 'ok', text: 'Defaults restored.' })
@@ -216,19 +227,12 @@ function SettingsForm() {
     <form className="admin" onSubmit={save} noValidate>
       <div className="admin__head">
         <p className="eyebrow">Admin</p>
-        <h1 className="page-title">Site settings</h1>
-        <p className="page-sub">Changes preview live across the whole site. Nothing goes public until you press Save.</p>
+        <h1 className="page-title">Appearance and tenant homepage</h1>
+        <p className="page-sub">These settings apply only to your account and your tenants. Other landlords and their tenants will not see your changes.</p>
       </div>
 
       <div className="admin__cols">
         <div className="admin__forms">
-          <Glass as="fieldset" className="panel">
-            <legend>Branding</legend>
-            <Text label="Website name" name="site_name" max={60} {...common} hint="Shown in the header, browser tab and footer." />
-            <Text label="Tagline" name="site_tagline" max={120} {...common} />
-            <Text label="Footer text" name="footer_text" max={200} multiline {...common} />
-          </Glass>
-
           <Glass as="fieldset" className="panel">
             <legend>Colors</legend>
             <div className="presets" role="group" aria-label="Color presets">
@@ -256,15 +260,16 @@ function SettingsForm() {
           </Glass>
 
           <Glass as="fieldset" className="panel">
-            <legend>Homepage hero</legend>
-            <Text label="Headline" name="hero_title" max={90} {...common} />
-            <Text label="Subtitle" name="hero_subtitle" max={220} multiline {...common} />
+            <legend>Tenant homepage</legend>
+            <p className="field__hint" style={{ marginTop: 0 }}>Customize the welcome message your tenants see. Your public RentEase homepage stays focused on landlord information.</p>
+            <Text label="Tenant welcome headline" name="hero_title" max={90} {...common} />
+            <Text label="Tenant welcome message" name="hero_subtitle" max={220} multiline {...common} />
             <Text label="Button text" name="hero_cta_text" max={30} {...common} />
           </Glass>
 
           <Glass as="fieldset" className="panel">
-            <legend>Logo &amp; images</legend>
-            <p className="field__hint" style={{ marginBottom: 6 }}>Pictures are shrunk automatically and go live as soon as they upload. Everything else still needs <b>Save changes</b>.</p>
+            <legend>Sidebar logo and tenant image</legend>
+            <p className="field__hint" style={{ marginBottom: 6 }}>Images are for your dashboard and your tenants only. Uploaded images go live as soon as they finish uploading. Other changes need <b>Save changes</b>.</p>
             {SLOTS.map((cfg) => (
               <ImageField
                 key={cfg.slot}
@@ -280,7 +285,7 @@ function SettingsForm() {
           <Glass as="fieldset" className="panel">
             <legend>Appearance</legend>
             <div className="field">
-              <span className="field__label">Default mode for new visitors</span>
+              <span className="field__label">Theme for you and your tenants</span>
               <div className="segmented" role="radiogroup" aria-label="Default mode">
                 {['light', 'dark', 'system'].map((m) => (
                   <button
@@ -295,7 +300,7 @@ function SettingsForm() {
                   </button>
                 ))}
               </div>
-              <span className="field__hint">Visitors can still switch with the sun/moon toggle in the header.</span>
+              <span className="field__hint">Your tenants inherit this theme. They can still use the header toggle on their own device.</span>
             </div>
             <label className="field">
               <span className="field__label">Glass blur <em className="field__count">{draft.glass_blur}px</em></span>
@@ -328,10 +333,10 @@ function SettingsForm() {
         <aside className="admin__preview" aria-label="Preview">
           <p className="eyebrow">Live preview</p>
           <div className="preview-frame">
-            <Hero s={{ ...saved, ...draft, ...Object.fromEntries(COLOR_KEYS.filter((k) => !HEX.test(draft[k])).map((k) => [k, saved[k]])) }} compact inert />
+            <Hero s={{ ...saved, ...draft, ...Object.fromEntries(COLOR_KEYS.filter((k) => !HEX.test(draft[k])).map((k) => [k, saved[k]])) }} compact inert tenant />
           </div>
           <p className="muted preview-note">
-            This is the hero visitors will see. The header above already shows your header, logo and website name.
+            This is the homepage your tenants will see. Your RentEase header and public homepage branding stay the same.
           </p>
         </aside>
       </div>

@@ -43,6 +43,9 @@ class UnitTransferController extends BaseApiController
         if ($this->Unit_transfer_model->has_pending($tenant_id)) {
             $this->fail('You already have a pending transfer request.', 409);
         }
+        if ($this->Unit_transfer_model->has_requested_this_month($tenant_id)) {
+            $this->fail('You can only submit one unit transfer request per month. You have already submitted a request for this month.', 429);
+        }
         $data = $this->validate($this->input(), [
             'requested_unit_id' => ['type' => 'int', 'required' => true, 'min' => 1],
             'reason' => ['type' => 'string', 'max' => 2000, 'nullable' => true],
@@ -125,5 +128,25 @@ class UnitTransferController extends BaseApiController
         $this->call->library('notifier');
         $this->notifier->transfer_result($id);
         $this->ok(['message' => 'Transfer request ' . $decision['status'], 'data' => $outcome['request']]);
+    }
+
+    public function admin_delete($id)
+    {
+        $this->api->require_method('DELETE');
+        $deleted = $this->Unit_transfer_model->delete_request($id, null, $this->uid());
+        if (!$deleted) {
+            $this->fail('Transfer request not found or unauthorized.', 404);
+        }
+        $this->ok(['message' => 'Transfer request deleted.']);
+    }
+
+    public function tenant_delete($id)
+    {
+        $this->api->require_method('DELETE');
+        $deleted = $this->Unit_transfer_model->delete_request($id, $this->uid(), null);
+        if (!$deleted) {
+            $this->fail('Transfer request not found or unauthorized.', 404);
+        }
+        $this->ok(['message' => 'Transfer request cancelled and deleted.']);
     }
 }

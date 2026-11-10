@@ -12,7 +12,8 @@ class CronController extends BaseApiController
     public function reminders()
     {
         $this->api->require_method('POST');
-        $this->call->model(['Bill_model', 'Notification_model']);
+        $this->call->model(['Bill_model', 'Notification_model', 'Lease_model']);
+        $this->Lease_model->sync_lifecycle();
         $this->call->library('notifier');
 
         $counts = ['checked' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'already_reminded' => 0];

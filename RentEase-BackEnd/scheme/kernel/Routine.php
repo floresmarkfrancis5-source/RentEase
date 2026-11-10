@@ -504,6 +504,7 @@ if ( ! function_exists('handle_cors'))
 			'Access-Control-Allow-Methods: ' .
 			'GET, POST, PUT, DELETE, PATCH, OPTIONS'
 		);
+		header('Access-Control-Expose-Headers: Server-Timing');
 
 		header('Access-Control-Max-Age: 3600');
 	}

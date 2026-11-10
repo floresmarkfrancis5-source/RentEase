@@ -60,6 +60,12 @@ class BillController extends BaseApiController
                     $bill['id']
                 );
             }
+            $this->Inapp_notification_model->create(
+                $this->uid(),
+                'new_bills',
+                'New bills generated',
+                count($created_bills) . ' rent bill(s) were generated for ' . $month . '.'
+            );
         }
         $this->ok(['message' => "{$r['created']} bill(s) created, {$r['skipped']} already existed.", 'month' => $month] + $r);
     }
@@ -86,6 +92,20 @@ class BillController extends BaseApiController
         }
         $this->Bill_model->delete_bill($id);
         $this->ok(['message' => 'Bill deleted']);
+    }
+
+    /** PATCH /api/admin/bills/{id} - adjust amount and/or notes on an unpaid bill */
+    public function adjust($id)
+    {
+        $in = $this->input();
+        $updated = $this->Bill_model->update_bill($id, [
+            'amount' => $in['amount'] ?? null,
+            'notes'  => array_key_exists('notes', $in) ? $in['notes'] : null,
+        ], $this->uid());
+        if (!$updated) {
+            $this->fail('Bill not found, already paid, or no valid fields provided.', 409);
+        }
+        $this->ok(['message' => 'Bill updated.', 'data' => $this->Bill_model->find($id, $this->uid())]);
     }
 
     /** GET /api/bills/{id}/statement - PDF billing statement. */

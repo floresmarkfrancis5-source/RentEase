@@ -2,8 +2,7 @@
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
 /**
- * Site_asset_model - images the admin uploads for the site (logo, homepage hero, login image).
- * KEYS maps the asset key to the site setting that holds its public URL.
+ * Site_asset_model - landlord-specific sidebar logos and tenant homepage hero images.
  */
 class Site_asset_model extends Model
 {
@@ -12,7 +11,6 @@ class Site_asset_model extends Model
     public const KEYS = [
         'logo'  => ['setting' => 'logo_url',        'max_bytes' => 400 * 1024],
         'hero'  => ['setting' => 'hero_image_url',  'max_bytes' => 2500 * 1024],
-        'login' => ['setting' => 'login_image_url', 'max_bytes' => 2500 * 1024],
     ];
     public const MIMES = ['image/png', 'image/jpeg', 'image/webp'];
     public const MAX_SIDE = 6000;
@@ -47,19 +45,22 @@ class Site_asset_model extends Model
         return [$bin, $info['mime'], null];
     }
 
-    public function put($key, $mime, $binary, $user_id)
+    public function put($key, $mime, $binary, $user_id, $owner_id)
     {
         $this->db->raw(
-            'INSERT INTO site_assets (asset_key, mime, data, byte_size, updated_by) VALUES (?, ?, ?, ?, ?)
+            'INSERT INTO site_assets (owner_id, asset_key, mime, data, byte_size, updated_by) VALUES (?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE mime = VALUES(mime), data = VALUES(data), byte_size = VALUES(byte_size), updated_by = VALUES(updated_by)',
-            [$key, $mime, $binary, strlen($binary), (int) $user_id]
+            [(int) $owner_id, $key, $mime, $binary, strlen($binary), (int) $user_id]
         );
     }
 
     /** @return array|null ['mime' => , 'data' => , 'byte_size' => , 'updated_at' => ] */
-    public function get($key)
+    public function get($key, $owner_id = null)
     {
-        $row = $this->db->raw('SELECT mime, data, byte_size, UNIX_TIMESTAMP(updated_at) AS ts FROM site_assets WHERE asset_key = ? LIMIT 1', [$key])
+        if ($owner_id === null) {
+            return null;
+        }
+        $row = $this->db->raw('SELECT mime, data, byte_size, UNIX_TIMESTAMP(updated_at) AS ts FROM site_assets WHERE asset_key = ? AND owner_id = ? LIMIT 1', [$key, (int) $owner_id])
             ->fetch(PDO::FETCH_ASSOC);
         if ($row && is_resource($row['data'])) {
             $row['data'] = stream_get_contents($row['data']);
@@ -67,8 +68,8 @@ class Site_asset_model extends Model
         return $row ?: null;
     }
 
-    public function remove($key)
+    public function remove($key, $owner_id)
     {
-        $this->db->raw('DELETE FROM site_assets WHERE asset_key = ?', [$key]);
+        $this->db->raw('DELETE FROM site_assets WHERE asset_key = ? AND owner_id = ?', [$key, (int) $owner_id]);
     }
 }

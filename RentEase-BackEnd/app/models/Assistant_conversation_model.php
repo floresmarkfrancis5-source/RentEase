@@ -74,6 +74,7 @@ class Assistant_conversation_model extends Model
                 foreach ($legacy_history as $item) {
                     $this->insert_message($conversation_id, $item['role'], $item['content']);
                 }
+                $history = $legacy_history;
             } else {
                 $conversation = $this->find_for_user($conversation_id, $user_id);
                 if (!$conversation) {
@@ -114,6 +115,7 @@ class Assistant_conversation_model extends Model
                     $this->update_title($conversation_id, $message);
                 }
             }
+            $history = $this->without_database_answers($history);
 
             $this->db->table($this->table)
                 ->where('id', (int) $conversation_id)
@@ -145,7 +147,29 @@ class Assistant_conversation_model extends Model
 
     public function append_confirmation($conversation_id, $user_id, $content)
     {
-        return $this->save_assistant_message($conversation_id, $user_id, $content);
+        if (!$this->find_for_user($conversation_id, $user_id)) {
+            return null;
+        }
+
+        $this->db->transaction();
+        try {
+            $this->db->raw(
+                'UPDATE ' . self::MESSAGES_TABLE . '
+                    SET proposal_json = NULL
+                  WHERE conversation_id = ? AND role = \'assistant\' AND proposal_json IS NOT NULL',
+                [(int) $conversation_id]
+            );
+            $message_id = $this->save_assistant_message($conversation_id, $user_id, $content);
+            if (!$message_id) {
+                $this->db->roll_back();
+                return null;
+            }
+            $this->db->commit();
+            return $message_id;
+        } catch (Throwable $e) {
+            $this->db->roll_back();
+            throw $e;
+        }
     }
 
     private function insert_message($conversation_id, $role, $content, $proposal = null)
@@ -162,7 +186,7 @@ class Assistant_conversation_model extends Model
     private function messages_before($conversation_id, $message_id)
     {
         $rows = $this->db->table(self::MESSAGES_TABLE)
-            ->select('role, content')
+            ->select('role, content, proposal_json')
             ->where('conversation_id', (int) $conversation_id)
             ->where('id', '<', (int) $message_id)
             ->order_by('id', 'DESC')
@@ -174,7 +198,7 @@ class Assistant_conversation_model extends Model
     private function recent_messages($conversation_id)
     {
         $rows = $this->db->table(self::MESSAGES_TABLE)
-            ->select('role, content')
+            ->select('role, content, proposal_json')
             ->where('conversation_id', (int) $conversation_id)
             ->order_by('id', 'DESC')
             ->limit(10)
@@ -187,7 +211,26 @@ class Assistant_conversation_model extends Model
         if ($messages && end($messages)['role'] === 'user') {
             array_pop($messages);
         }
-        return $messages;
+        return $this->without_database_answers($messages);
+    }
+
+    private function without_database_answers(array $messages)
+    {
+        $safe = [];
+        foreach ($messages as $message) {
+            $proposal = isset($message['proposal_json']) && $message['proposal_json'] !== null
+                ? json_decode($message['proposal_json'], true, 512, JSON_THROW_ON_ERROR)
+                : null;
+            if (($proposal['kind'] ?? null) === 'database_answer') {
+                if ($safe && end($safe)['role'] === 'user') {
+                    array_pop($safe);
+                }
+                continue;
+            }
+            unset($message['proposal_json']);
+            $safe[] = $message;
+        }
+        return $safe;
     }
 
     private function first_user_message_id($conversation_id)

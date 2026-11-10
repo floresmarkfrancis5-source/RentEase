@@ -10,21 +10,58 @@ class TenantPortalController extends BaseApiController
     public function __construct()
     {
         parent::__construct();
-        $this->call->model(['Bill_model', 'Payment_model', 'Lease_model', 'Maintenance_model', 'Inapp_notification_model']);
+        $this->call->model(['Bill_model', 'Payment_model', 'Lease_model', 'Maintenance_model', 'Maintenance_image_model', 'Inapp_notification_model']);
     }
 
     public function summary()
     {
         $this->api->require_method('GET');
+        $this->Lease_model->sync_lifecycle();
         $uid     = $this->uid();
         $balance = $this->Bill_model->tenant_balance($uid);
         $this->ok(['data' => [
             'lease'    => $this->Lease_model->active_for_tenant($uid) ?: null,
+            'upcoming_lease' => $this->Lease_model->scheduled_for_tenant($uid) ?: null,
+            'contract_offers' => $this->Lease_model->offers_for_tenant($uid),
+            'expired_contract_offers' => $this->Lease_model->expired_offers_for_tenant($uid),
             'balance'  => (float) $balance['balance'],
             'overdue'  => ['count' => (int) $balance['overdue_count'], 'amount' => (float) $balance['overdue_amount']],
             'next_due' => $this->Bill_model->next_due($uid) ?: null,
             'recent_payments' => array_slice($this->Payment_model->list_payments(['tenant_id' => $uid, 'status' => 'paid']), 0, 5),
         ]]);
+    }
+
+    public function accept_lease_offer($id)
+    {
+        $this->api->require_method('POST');
+        $offer = $this->Lease_model->find_for_tenant($id, $this->uid());
+        if (!$offer || $offer['status'] !== 'offered') {
+            $this->fail('This contract is no longer available. Contact your landlord to request a new offer.', 409);
+        }
+        if (empty($this->input()['agree'])) {
+            $this->fail('Confirm that you have read and agree to the contract.', 422, ['agree' => 'Agreement is required.']);
+        }
+        $result = $this->Lease_model->accept_offer($id, $this->uid());
+        if ($result === 'expired') {
+            $this->fail('This offer expired on its move-in date. Ask your landlord for a new contract with a new date.', 409);
+        }
+        if ($result === 'conflict') {
+            $this->fail('This unit or your account already has an accepted move-in. Contact your landlord.', 409);
+        }
+        if ($result !== 'active' && $result !== 'scheduled') {
+            $this->fail('This contract is no longer available. Contact your landlord to request a new offer.', 409);
+        }
+        $this->call->model('Inapp_notification_model');
+        $this->Inapp_notification_model->notify_landlord(
+            $offer['landlord_id'],
+            'new_lease',
+            'Lease contract accepted',
+            $offer['tenant_name'] . ' accepted the lease for ' . $offer['unit_name'] . '.',
+            $offer['id']
+        );
+        $this->ok(['message' => $result === 'active'
+            ? 'Contract accepted. Your lease is now active.'
+            : 'Contract accepted. Your lease will start on the move-in date.']);
     }
 
     public function bills()
@@ -60,10 +97,17 @@ class TenantPortalController extends BaseApiController
         }
 
         $this->Payment_model->cancel_stale_pending($bill['id']);
-        $pid = $this->Payment_model->create_pending($bill['id'], $bill['tenant_id'], $bill['amount'], 'paymongo');
+
+        // Safe test mode override: when in PayMongo test mode, force amount to 1.00 PHP so only 1 peso is charged
+        $chargeAmount = (config_item('paymongo_force_test_piso') && $this->paymongo->mode() === 'test')
+            ? 1.00
+            : (float) $bill['amount'];
+
+        $pid = $this->Payment_model->create_pending($bill['id'], $bill['tenant_id'], $chargeAmount, 'paymongo');
+        $checkoutBill = array_merge($bill, ['amount' => $chargeAmount]);
         try {
             $co = $this->paymongo->create_checkout(
-                $bill, $pid,
+                $checkoutBill, $pid,
                 $frontend . '/tenant/bills?payment=' . $pid . '&result=success',
                 $frontend . '/tenant/bills?payment=' . $pid . '&result=cancelled'
             );
@@ -108,6 +152,14 @@ class TenantPortalController extends BaseApiController
     {
         $this->api->require_method('GET');
         $rows = $this->Maintenance_model->list_requests(['tenant_id' => $this->uid()]);
+        if (!empty($rows)) {
+            $ids = array_column($rows, 'id');
+            $imgs = $this->Maintenance_image_model->list_for_requests($ids);
+            foreach ($rows as &$r) {
+                $r['images'] = $imgs[$r['id']] ?? [];
+            }
+            unset($r);
+        }
         $this->ok(['data' => $rows, 'count' => count($rows)]);
     }
 
@@ -118,17 +170,95 @@ class TenantPortalController extends BaseApiController
         if (!$lease) {
             $this->fail('You need an active lease before you can send a repair request.', 409);
         }
-        $d = $this->validate($this->input(), [
-            'title'       => ['type' => 'string', 'required' => true, 'min' => 3, 'max' => 120],
+        $in = $this->input();
+        $d = $this->validate($in, [
+            'category'    => ['type' => 'enum', 'required' => true, 'values' => [
+                'Gas leak or fire damage',
+                'Electrical (wiring, outlets, breaker)',
+                'Plumbing (leaks, pipes, drains, toilet)',
+                'Water supply (pump, tank, no water)',
+                'Doors, windows, and locks',
+                'Roof and ceiling',
+                'Water heater or aircon (if provided)',
+                'Pests and mold',
+                'Walls, floors, and paint',
+                'Other',
+            ]],
+            'title'       => ['type' => 'string', 'max' => 120, 'nullable' => true],
             'description' => ['type' => 'string', 'required' => true, 'min' => 5, 'max' => 2000],
-            'priority'    => ['type' => 'enum', 'values' => ['low', 'medium', 'high'], 'default' => 'medium'],
+            'priority'    => ['type' => 'enum', 'values' => ['low', 'medium', 'high'], 'nullable' => true],
         ]);
+        if ($d['category'] === 'Other' && mb_strlen(trim($d['title'] ?? '')) < 3) {
+            $this->fail('Describe the repair when selecting Other.', 422, ['title' => 'Enter at least 3 characters.']);
+        }
+        $fixedPriority = in_array($d['category'], [
+            'Gas leak or fire damage',
+            'Electrical (wiring, outlets, breaker)',
+            'Plumbing (leaks, pipes, drains, toilet)',
+            'Water supply (pump, tank, no water)',
+        ], true) ? 'high' : (in_array($d['category'], [
+            'Doors, windows, and locks',
+            'Roof and ceiling',
+            'Water heater or aircon (if provided)',
+            'Pests and mold',
+        ], true) ? 'medium' : 'low');
+        if ($d['category'] === 'Other' && empty($d['priority'])) {
+            $this->fail('Choose an urgency for this specific repair request.', 422, ['priority' => 'Choose Low, Medium, or Urgent.']);
+        }
+        $priority = $d['category'] === 'Other' ? $d['priority'] : $fixedPriority;
+        $d['title'] = $d['category'] === 'Other' ? trim($d['title']) : $d['category'];
+        $d['priority'] = $priority;
         $id = $this->Maintenance_model->create_request($d + ['tenant_id' => $this->uid(), 'unit_id' => $lease['unit_id']]);
+
+        // Process attached images (e.g. pasted or selected photos)
+        $raw_images = is_array($in['images'] ?? null) ? $in['images'] : [];
+        $saved_images = [];
+        $max_images = 10;
+        $count = 0;
+        foreach ($raw_images as $img) {
+            if ($count >= $max_images) break;
+            $data_url = is_array($img) ? ($img['data'] ?? null) : (is_string($img) ? $img : null);
+            $file_name = is_array($img) ? ($img['name'] ?? null) : 'repair_photo.jpg';
+            if (!$data_url) continue;
+
+            [$binary, $mime, $err] = $this->Maintenance_image_model->decode_image($data_url);
+            if ($binary && $mime && !$err) {
+                $img_id = $this->Maintenance_image_model->create($id, $file_name, $mime, $binary, $this->uid(), 'tenant', $data_url);
+                $saved_images[] = [
+                    'id'         => $img_id,
+                    'request_id' => $id,
+                    'file_name'  => $file_name,
+                    'mime'       => $mime,
+                    'byte_size'  => strlen($binary),
+                ];
+                $count++;
+            }
+        }
+
+        // 1. In-app notification to landlord
         $this->Inapp_notification_model->notify_landlord($lease['landlord_id'],
             'new_maintenance_request', 'New repair request',
-            $lease['tenant_name'] . ' submitted a repair request for ' . $lease['unit_name'] . '.',
+            $lease['tenant_name'] . ' submitted a repair request for ' . $lease['unit_name'] . ($count > 0 ? " with {$count} photo(s)." : '.'),
             $id
         );
-        $this->ok(['message' => 'Request sent to your landlord', 'data' => $this->Maintenance_model->find($id)], 201);
+
+        // 2. Email notification to landlord
+        $this->call->library('notifier');
+        $this->notifier->new_maintenance_request($id);
+
+        $row = $this->Maintenance_model->find($id);
+        $row['images'] = $saved_images;
+
+        $this->ok(['message' => 'Request sent to your landlord', 'data' => $row], 201);
+    }
+
+    public function maintenance_delete($id)
+    {
+        $this->api->require_method('DELETE');
+        $deleted = $this->Maintenance_model->delete_request($id, $this->uid(), null);
+        if (!$deleted) {
+            $this->fail('Maintenance request not found or unauthorized.', 404);
+        }
+        $this->ok(['message' => 'Maintenance request cancelled and deleted.']);
     }
 }

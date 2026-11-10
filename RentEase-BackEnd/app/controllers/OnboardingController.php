@@ -7,7 +7,7 @@ class OnboardingController extends BaseApiController
     public function __construct()
     {
         parent::__construct();
-        $this->call->model(['User_model', 'Property_model', 'Unit_model', 'Lease_model']);
+        $this->call->model(['User_model', 'Property_model', 'Unit_model', 'Lease_model', 'Site_setting_model']);
     }
 
     public function status()
@@ -54,6 +54,9 @@ class OnboardingController extends BaseApiController
             'longitude' => ['type' => 'decimal', 'min' => -180, 'max' => 180, 'scale' => 7, 'nullable' => true],
             'description' => ['type' => 'string', 'max' => 2000, 'nullable' => true],
         ]);
+        if (array_key_exists('contract_template', $in['property'] ?? [])) {
+            $property['contract_template'] = $this->contract_template($in['property']['contract_template']);
+        }
 
         $unit_inputs = $in['units'] ?? [];
         $tenant_inputs = $in['tenants'] ?? [];
@@ -72,11 +75,14 @@ class OnboardingController extends BaseApiController
             $units[] = $this->validate($unit, [
                 'unit_name' => ['type' => 'string', 'required' => true, 'max' => 50],
                 'monthly_rent' => ['type' => 'decimal', 'required' => true, 'min' => 1, 'max' => 99999999.99],
+                'default_deposit' => ['type' => 'decimal', 'min' => 0, 'max' => 99999999.99, 'default' => 0],
+                'default_due_day' => ['type' => 'int', 'min' => 1, 'max' => 28, 'default' => 5],
                 'capacity' => ['type' => 'int', 'min' => 1, 'max' => 50, 'default' => 1],
                 'condition_tag' => ['type' => 'enum', 'values' => ['good_condition', 'under_maintenance'], 'default' => 'good_condition'],
             ]);
         }
 
+        $billingDefaults = $this->Site_setting_model->get_all($this->uid());
         $tenants = [];
         $used_units = [];
         $seen_usernames = [];
@@ -91,19 +97,46 @@ class OnboardingController extends BaseApiController
                 'email' => ['type' => 'email', 'required' => true],
                 'full_name' => ['type' => 'string', 'required' => true, 'min' => 2, 'max' => 120],
                 'phone' => ['type' => 'string', 'max' => 30, 'nullable' => true],
-                'start_date' => ['type' => 'date', 'default' => date('Y-m-d')],
+                'start_date' => ['type' => 'date', 'default' => date('Y-m-d', strtotime('+5 days'))],
+                'end_date' => ['type' => 'date', 'nullable' => true],
                 'monthly_rent' => ['type' => 'decimal', 'min' => 1, 'max' => 99999999.99, 'nullable' => true],
                 'deposit' => ['type' => 'decimal', 'min' => 0, 'max' => 99999999.99, 'default' => 0],
-                'due_day' => ['type' => 'int', 'min' => 1, 'max' => 28, 'default' => 5],
+                'due_day' => ['type' => 'int', 'min' => 1, 'max' => 28, 'default' => (int) $billingDefaults['billing_due_day']],
             ]);
             if (!preg_match('/^[A-Za-z0-9_.-]+$/', $clean['username'])) {
                 $this->fail('Choose a valid tenant username.', 422, ['tenants.' . $index . '.username' => 'Use letters, numbers, dots, dashes, or underscores.']);
+            }
+            if ($clean['start_date'] < date('Y-m-d')) {
+                $this->fail('Choose today or a future move-in date.', 422, ['tenants.' . $index . '.start_date' => 'Move-in date cannot be in the past.']);
+            }
+            $startDay = (int) date('j', strtotime($clean['start_date']));
+            if ($billingDefaults['billing_style'] === 'first_of_month' && $startDay !== 1) {
+                $this->fail('This landlord requires leases to start on the first day of a month.', 422, ['tenants.' . $index . '.start_date' => 'Choose the first day of a month.']);
+            }
+            if ($billingDefaults['billing_style'] === 'anniversary' && $startDay > 28) {
+                $this->fail('Anniversary billing requires a lease start date on or before the 28th.', 422, ['tenants.' . $index . '.start_date' => 'Choose a date on or before the 28th.']);
+            }
+            $contract_template = $property['contract_template'] ? json_decode($property['contract_template'], true) : null;
+            if (!empty($contract_template['enabled']) && $clean['start_date'] <= date('Y-m-d')) {
+                $this->fail('An approval contract needs a future move-in date so the tenant has time to review it.', 422, ['tenants.' . $index . '.start_date' => 'Choose a future move-in date for contract approval.']);
             }
             if (isset($used_units[$clean['unit_index']])) {
                 $this->fail('Assign each tenant to a different unit.', 422, ['tenants.' . $index . '.unit_index' => 'This unit already has a tenant in the setup.']);
             }
             if ($units[$clean['unit_index']]['condition_tag'] !== 'good_condition') {
                 $this->fail('A tenant can only be assigned to a unit in good condition.', 422, ['tenants.' . $index . '.unit_index' => 'Choose a unit in good condition.']);
+            }
+            $rent = $clean['monthly_rent'] ?? $units[$clean['unit_index']]['monthly_rent'];
+            if ((float) $billingDefaults['billing_late_fee'] > (float) $rent) {
+                $this->fail('The late fee cannot exceed one month of rent.', 422, ['tenants.' . $index . '.monthly_rent' => 'Increase the rent or lower the default late fee.']);
+            }
+            if (empty($clean['end_date'])) {
+                $end = new DateTime($clean['start_date']);
+                $end->modify('+1 year')->modify('-1 day');
+                $clean['end_date'] = $end->format('Y-m-d');
+            }
+            if ($clean['end_date'] < $clean['start_date']) {
+                $this->fail('The lease end date must be after the move-in date.', 422, ['tenants.' . $index . '.end_date' => 'Must be on or after the move-in date.']);
             }
             $username_key = strtolower($clean['username']);
             if (isset($seen_usernames[$username_key]) || $this->User_model->field_taken('username', $clean['username'])) {
@@ -144,9 +177,18 @@ class OnboardingController extends BaseApiController
                     'unit_id' => $unit_ids[$tenant['unit_index']],
                     'tenant_id' => $tenant_id,
                     'start_date' => $tenant['start_date'],
+                    'end_date' => $tenant['end_date'],
                     'monthly_rent' => $tenant['monthly_rent'] ?? $units[$tenant['unit_index']]['monthly_rent'],
-                    'deposit' => $tenant['deposit'],
-                    'due_day' => $tenant['due_day'],
+                    'deposit' => $tenant['deposit'] ?? $units[$tenant['unit_index']]['default_deposit'],
+                    'due_day' => $tenant['due_day'] ?? $billingDefaults['billing_due_day'],
+                    'billing_style' => $billingDefaults['billing_style'],
+                    'prorate_first_month' => $billingDefaults['billing_prorate_first_month'] === '1',
+                    'grace_period_days' => (int) $billingDefaults['billing_grace_period_days'],
+                    'late_fee' => (float) $billingDefaults['billing_late_fee'],
+                    'contract_term' => 'annually',
+                    'contract_months' => 12,
+                    'contract_required' => !empty($property['contract_template']) && !empty(json_decode($property['contract_template'], true)['enabled']),
+                    'contract_json' => $property['contract_template'] ?? null,
                 ], $this->uid());
                 $created_credentials[] = [
                     'username' => $tenant['username'],

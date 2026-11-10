@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
+import { useLanguage } from '../context/LanguageContext'
 
 function destination(type, role) {
   if (type === 'new_transfer_request') return '/admin/transfers'
+  if (type === 'new_early_move_request') return '/admin/transfers'
   if (type === 'payment_received') return '/admin/payments'
   if (type === 'new_maintenance_request') return '/admin/maintenance'
   if (type === 'transfer_result') return '/tenant/transfers'
+  if (type === 'early_move_result') return '/tenant'
   if (type === 'maintenance_update') return '/tenant/maintenance'
   if (type === 'new_bill' || type === 'due_reminder' || type === 'payment_confirmation') return '/tenant/bills'
   return role === 'admin' ? '/admin' : '/tenant'
@@ -18,6 +21,7 @@ function timeLabel(value) {
 }
 
 export default function NotificationBell({ user }) {
+  const { t } = useLanguage()
   const [count, setCount] = useState(0)
   const [items, setItems] = useState([])
   const [open, setOpen] = useState(false)
@@ -25,14 +29,23 @@ export default function NotificationBell({ user }) {
   const [error, setError] = useState('')
   const box = useRef(null)
   const navigate = useNavigate()
+  const busyRef = useRef(false)
   const base = user.role === 'admin' ? '/api/admin/in-app-notifications' : '/api/my/notifications'
 
   const refreshCount = useCallback(async () => {
+    // Skip polling if the browser tab is hidden/inactive or if a request is already in flight
+    if (typeof document !== 'undefined' && document.hidden) return
+    if (busyRef.current) return
+    busyRef.current = true
     try {
       const r = await api(`${base}/unread-count`, { auth: true })
       setCount(Number(r.data?.count) || 0)
       setError('')
-    } catch (e) { setError(e.message) }
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      busyRef.current = false
+    }
   }, [base])
 
   const loadItems = useCallback(async () => {
@@ -47,8 +60,24 @@ export default function NotificationBell({ user }) {
 
   useEffect(() => {
     refreshCount()
-    const timer = window.setInterval(refreshCount, 45000)
-    return () => window.clearInterval(timer)
+    // Poll every 60s instead of rapid spamming
+    const timer = window.setInterval(refreshCount, 60000)
+    const handleSidebarRead = () => refreshCount()
+
+    // Check once immediately when the user switches back to this tab
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        refreshCount()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('rentease:notifications-read', handleSidebarRead)
+
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('rentease:notifications-read', handleSidebarRead)
+    }
   }, [refreshCount])
 
   useEffect(() => {
@@ -86,7 +115,7 @@ export default function NotificationBell({ user }) {
 
   return (
     <div className="notification-bell" ref={box}>
-      <button type="button" className="icon-btn notification-bell__button" aria-label={count ? `Notifications, ${count} unread` : 'Notifications'}
+      <button type="button" className="icon-btn notification-bell__button" aria-label={count ? `${t('Notifications')}, ${count} ${t('unread')}` : t('Notifications')}
         aria-expanded={open} onClick={toggle}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
@@ -94,20 +123,20 @@ export default function NotificationBell({ user }) {
         {!!count && <span className="notification-badge">{count > 9 ? '9+' : count}</span>}
       </button>
       {open && (
-        <div className="notification-panel" role="dialog" aria-label="Notifications">
+        <div className="notification-panel" role="dialog" aria-label={t('Notifications')}>
           <div className="notification-panel__head">
-            <strong>Notifications</strong>
-            <button type="button" className="notification-panel__read-all" onClick={markAll} disabled={!count}>Mark all as read</button>
+            <strong>{t('Notifications')}</strong>
+            <button type="button" className="notification-panel__read-all" onClick={markAll} disabled={!count}>{t('Mark all as read')}</button>
           </div>
           {error && <p className="alert alert--error notification-panel__error" role="alert">{error}</p>}
-          {loading ? <p className="notification-panel__empty">Loading…</p> : items.length ? (
+          {loading ? <p className="notification-panel__empty">{t('Loading…')}</p> : items.length ? (
             <ul className="notification-list">
               {items.map((item) => (
                 <li key={item.id}>
                   <button type="button" className={`notification-item${item.is_read ? '' : ' is-unread'}`} onClick={() => markOne(item)}>
                     <span className="notification-item__top">
                       <strong>{item.title}</strong>
-                      {!item.is_read && <i aria-label="Unread" />}
+                      {!item.is_read && <i aria-label={t('Unread')} />}
                     </span>
                     <span>{item.message}</span>
                     <time>{timeLabel(item.created_at)}</time>
@@ -115,8 +144,8 @@ export default function NotificationBell({ user }) {
                 </li>
               ))}
             </ul>
-          ) : !error ? <p className="notification-panel__empty">You’re all caught up.</p> : null}
-          {user.role === 'admin' && <Link className="notification-panel__footer" to="/admin/notifications" onClick={() => setOpen(false)}>View email log</Link>}
+          ) : !error ? <p className="notification-panel__empty">{t('You’re all caught up.')}</p> : null}
+          {user.role === 'admin' && <Link className="notification-panel__footer" to="/admin/notifications" onClick={() => setOpen(false)}>{t('View email log')}</Link>}
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@ class Maintenance_model extends Model
 {
     protected $table = 'maintenance_requests';
 
-    private const SELECT = "SELECT m.*, t.full_name AS tenant_name, t.email AS tenant_email, u.unit_name, p.name AS property_name
+    private const SELECT = "SELECT m.*, t.full_name AS tenant_name, t.email AS tenant_email, u.unit_name, p.name AS property_name, p.owner_id AS landlord_id
                FROM maintenance_requests m
                JOIN users t      ON t.id = m.tenant_id
                JOIN units u      ON u.id = m.unit_id
@@ -41,6 +41,7 @@ class Maintenance_model extends Model
             'tenant_id'   => (int) $d['tenant_id'],
             'unit_id'     => (int) $d['unit_id'],
             'title'       => $d['title'],
+            'category'    => $d['category'],
             'description' => $d['description'],
             'priority'    => $d['priority'],
             'status'      => 'pending',
@@ -51,7 +52,7 @@ class Maintenance_model extends Model
 
     public function update_request($id, array $d)
     {
-        $set = array_intersect_key($d, array_flip(['status', 'admin_notes', 'priority']));
+        $set = array_intersect_key($d, array_flip(['status', 'admin_notes']));
         if (!$set) {
             return 0;
         }
@@ -60,5 +61,18 @@ class Maintenance_model extends Model
             $set['resolved_at'] = $set['status'] === 'resolved' ? date('Y-m-d H:i:s') : null;
         }
         return $this->db->table($this->table)->where('id', (int) $id)->update($set);
+    }
+
+    public function delete_request($id, $tenant_id = null, $landlord_id = null)
+    {
+        $req = $this->find($id, $landlord_id);
+        if (!$req) {
+            return false;
+        }
+        if ($tenant_id !== null && (int) $req['tenant_id'] !== (int) $tenant_id) {
+            return false;
+        }
+        $this->db->table('maintenance_images')->where('request_id', (int) $id)->delete();
+        return (bool) $this->db->table($this->table)->where('id', (int) $id)->delete();
     }
 }

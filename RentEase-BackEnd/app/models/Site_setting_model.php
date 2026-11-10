@@ -4,7 +4,7 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 /**
  * Site_setting_model
  *
- * Key/value store for admin-editable branding, theme colors and hero content.
+ * Key/value store for landlord-specific appearance and tenant welcome content.
  * SCHEMA is the single source of truth: allowed keys, validation, defaults.
  * Unknown keys sent by a client are ignored, so nothing else can be written.
  */
@@ -12,40 +12,47 @@ class Site_setting_model extends Model
 {
     protected $table = 'site_settings';
 
-    /** type: text | color | url | enum | int */
+    /** type: text | color | url | enum | int | decimal */
     public const SCHEMA = [
-        // ---- branding ----
-        'site_name'       => ['group' => 'branding',   'type' => 'text',  'max' => 60,  'required' => true,  'default' => 'RentEase'],
-        'site_tagline'    => ['group' => 'branding',   'type' => 'text',  'max' => 120, 'default' => 'Rental billing, made effortless'],
+        // ---- landlord's sidebar logo ----
         'logo_url'        => ['group' => 'branding',   'type' => 'url',   'max' => 500, 'default' => ''],
-        'footer_text'     => ['group' => 'branding',   'type' => 'text',  'max' => 200, 'default' => 'Built for landlords and tenants of apartments and boarding houses.'],
         // ---- colors ----
-        'accent_color'    => ['group' => 'colors',     'type' => 'color', 'default' => '#7c4fe0'],
-        'header_color'    => ['group' => 'colors',     'type' => 'color', 'default' => '#0d0817'],
-        'hero_color_from' => ['group' => 'colors',     'type' => 'color', 'default' => '#5a2fb8'],
-        'hero_color_to'   => ['group' => 'colors',     'type' => 'color', 'default' => '#1a0f2c'],
+        'accent_color'    => ['group' => 'colors',     'type' => 'color', 'default' => '#e05a47'],
+        'header_color'    => ['group' => 'colors',     'type' => 'color', 'default' => '#1e4620'],
+        'hero_color_from' => ['group' => 'colors',     'type' => 'color', 'default' => '#1e4620'],
+        'hero_color_to'   => ['group' => 'colors',     'type' => 'color', 'default' => '#4a7450'],
         // ---- hero ----
-        'hero_title'      => ['group' => 'hero',       'type' => 'text',  'max' => 90,  'required' => true, 'default' => 'Rent collection, without the notebook.'],
-        'hero_subtitle'   => ['group' => 'hero',       'type' => 'text',  'max' => 220, 'default' => 'Units, tenants, monthly billing, online payments and repair requests — in one calm, centralized place.'],
-        'hero_cta_text'   => ['group' => 'hero',       'type' => 'text',  'max' => 30,  'default' => 'Get started'],
+        'hero_title'      => ['group' => 'hero',       'type' => 'text',  'max' => 90,  'required' => true, 'default' => 'Welcome home. Your rent, all in one place.'],
+        'hero_subtitle'   => ['group' => 'hero',       'type' => 'text',  'max' => 220, 'default' => 'Check what is due, download receipts, and follow repair updates from your tenant account.'],
+        'hero_cta_text'   => ['group' => 'hero',       'type' => 'text',  'max' => 30,  'default' => 'Go to my rent'],
         'hero_image_url'  => ['group' => 'hero',       'type' => 'url',   'max' => 500, 'default' => ''],
-        'login_image_url' => ['group' => 'hero',       'type' => 'url',   'max' => 500, 'default' => ''],
         // ---- appearance ----
-        'default_theme'   => ['group' => 'appearance', 'type' => 'enum',  'values' => ['light', 'dark', 'system'], 'default' => 'system'],
-        'glass_blur'      => ['group' => 'appearance', 'type' => 'int',   'min' => 0,  'max' => 40, 'default' => '18'],
-        'glass_opacity'   => ['group' => 'appearance', 'type' => 'int',   'min' => 20, 'max' => 90, 'default' => '55'],
+        'default_theme'   => ['group' => 'appearance', 'type' => 'enum',  'values' => ['light', 'dark', 'system'], 'default' => 'light'],
+        'glass_blur'      => ['group' => 'appearance', 'type' => 'int',   'min' => 0,  'max' => 40, 'default' => '8'],
+        'glass_opacity'   => ['group' => 'appearance', 'type' => 'int',   'min' => 20, 'max' => 90, 'default' => '90'],
+        // ---- landlord billing defaults; copied onto each lease at creation ----
+        'billing_style' => ['group' => 'billing', 'type' => 'enum', 'values' => ['calendar', 'anniversary', 'first_of_month'], 'default' => 'calendar'],
+        'billing_due_day' => ['group' => 'billing', 'type' => 'int', 'min' => 1, 'max' => 28, 'default' => '1'],
+        'billing_prorate_first_month' => ['group' => 'billing', 'type' => 'enum', 'values' => ['0', '1'], 'default' => '1'],
+        'billing_grace_period_days' => ['group' => 'billing', 'type' => 'int', 'min' => 0, 'max' => 15, 'default' => '3'],
+        'billing_late_fee' => ['group' => 'billing', 'type' => 'decimal', 'min' => 0, 'max' => 999999.99, 'default' => '0.00'],
     ];
 
     /** @return array<string,string> every setting, falling back to defaults for missing rows */
-    public function get_all()
+    public function get_all($owner_id = null)
     {
         $out = [];
         foreach (self::SCHEMA as $key => $def) {
             $out[$key] = (string) $def['default'];
         }
 
+        if ($owner_id === null) {
+            return $out;
+        }
+
         $rows = $this->db->table($this->table)
             ->select('setting_key, setting_value')
+            ->where('owner_id', (int) $owner_id)
             ->get_all(PDO::FETCH_ASSOC);
         foreach ($rows as $row) {
             if (isset(self::SCHEMA[$row['setting_key']]) && $row['setting_value'] !== null) {
@@ -56,11 +63,13 @@ class Site_setting_model extends Model
     }
 
     /** @return array<int,array<string,mixed>> */
-    public function history()
+    public function history($owner_id)
     {
         return $this->db->raw(
             "SELECT l.setting_key, l.old_value, l.new_value, l.changed_at, u.username AS changed_by
-               FROM site_settings_log l LEFT JOIN users u ON u.id = l.changed_by ORDER BY l.id DESC LIMIT 50"
+               FROM site_settings_log l LEFT JOIN users u ON u.id = l.changed_by
+              WHERE l.owner_id = ? ORDER BY l.id DESC LIMIT 50",
+            [(int) $owner_id]
         )->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -111,8 +120,8 @@ class Site_setting_model extends Model
 
                 case 'url':
                     if ($value !== '') {
-                        // either an uploaded image served by this API (/api/assets/logo?v=123) or an http(s) link
-                        $own = (bool) preg_match('#^/api/assets/(logo|hero|login)(\?v=\d{1,12})?$#', $value);
+                        // either an uploaded image served by this API or an http(s) link
+                        $own = (bool) preg_match('#^/api/assets/(logo|hero)\?owner=\d{1,10}&v=\d{1,12}$#', $value);
                         $ok = $own || (filter_var($value, FILTER_VALIDATE_URL)
                            && preg_match('#^https?://#i', $value)
                            && mb_strlen($value) <= $def['max']);
@@ -137,6 +146,14 @@ class Site_setting_model extends Model
                     }
                     $value = (string) (int) $value;
                     break;
+
+                case 'decimal':
+                    if (!is_numeric($value) || (float) $value < $def['min'] || (float) $value > $def['max']) {
+                        $errors[$key] = 'Enter a valid amount within the allowed range.';
+                        continue 2;
+                    }
+                    $value = number_format((float) $value, 2, '.', '');
+                    break;
             }
 
             $clean[$key] = $value;
@@ -151,9 +168,9 @@ class Site_setting_model extends Model
      * @param array<string,string> $clean
      * @return array<int,string> keys that changed
      */
-    public function save(array $clean, $user_id)
+    public function save(array $clean, $user_id, $owner_id)
     {
-        $current = $this->get_all();
+        $current = $this->get_all($owner_id);
         $changed = [];
 
         $this->db->transaction();
@@ -163,14 +180,14 @@ class Site_setting_model extends Model
                     continue;
                 }
                 $this->db->raw(
-                    "INSERT INTO site_settings (setting_key, setting_value, setting_group, updated_by)
-                     VALUES (?, ?, ?, ?)
+                    "INSERT INTO site_settings (owner_id, setting_key, setting_value, setting_group, updated_by)
+                     VALUES (?, ?, ?, ?, ?)
                      ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_by = VALUES(updated_by)",
-                    [$key, $value, self::SCHEMA[$key]['group'], $user_id]
+                    [(int) $owner_id, $key, $value, self::SCHEMA[$key]['group'], $user_id]
                 );
                 $this->db->raw(
-                    'INSERT INTO site_settings_log (setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?)',
-                    [$key, $current[$key] ?? null, $value, $user_id]
+                    'INSERT INTO site_settings_log (owner_id, setting_key, old_value, new_value, changed_by) VALUES (?, ?, ?, ?, ?)',
+                    [(int) $owner_id, $key, $current[$key] ?? null, $value, $user_id]
                 );
                 $changed[] = $key;
             }
@@ -183,12 +200,12 @@ class Site_setting_model extends Model
     }
 
     /** Restore every setting to its default value. */
-    public function reset($user_id)
+    public function reset($user_id, $owner_id)
     {
         $defaults = [];
         foreach (self::SCHEMA as $key => $def) {
             $defaults[$key] = (string) $def['default'];
         }
-        return $this->save($defaults, $user_id);
+        return $this->save($defaults, $user_id, $owner_id);
     }
 }

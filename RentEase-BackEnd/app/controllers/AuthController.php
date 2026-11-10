@@ -31,9 +31,11 @@ class AuthController extends BaseApiController
             'full_name'            => $u['full_name'],
             'phone'                => $u['phone'] ?? null,
             'role'                 => $u['role'],
+            'landlord_id'          => isset($u['landlord_id']) ? (int) $u['landlord_id'] : null,
             'onboarding_completed' => (int) ($u['onboarding_completed'] ?? 1) === 1,
             'must_change_password' => (int) $u['must_change_password'] === 1,
             'has_avatar'           => $this->User_avatar_model->exists($u['id']),
+            'avatar_url'           => $this->User_avatar_model->get_url($u['id']),
             'created_at'           => $u['created_at'] ?? null,
         ];
     }
@@ -218,5 +220,113 @@ class AuthController extends BaseApiController
         // Sign every other device out.
         $this->User_model->delete_refresh_tokens($user['id']);
         $this->ok(['message' => 'Password changed. Please log in again on your other devices.']);
+    }
+
+    public function verify_tenant_invitation()
+    {
+        $this->api->require_method('GET');
+        $raw_token = trim((string) ($_GET['token'] ?? ''));
+        if ($raw_token === '' || strlen($raw_token) !== 64 || !ctype_xdigit($raw_token)) {
+            $this->fail('Invalid or missing activation token.', 400);
+        }
+
+        $this->call->model('Tenant_invitation_model');
+        $token_hash = hash('sha256', $raw_token);
+        $record = $this->Tenant_invitation_model->find_valid($token_hash);
+
+        if (!$record) {
+            $this->fail('This invitation link is invalid or has expired. Please ask your landlord to resend it.', 404);
+        }
+
+        $this->ok([
+            'valid'  => true,
+            'tenant' => [
+                'username'      => $record['username'],
+                'email'         => $record['email'],
+                'full_name'     => $record['full_name'],
+                'unit_name'     => $record['unit_name'] ?? null,
+                'property_name' => $record['property_name'] ?? null,
+                'expires_at'    => $record['expires_at'],
+            ]
+        ]);
+    }
+
+    public function activate_tenant()
+    {
+        $this->api->require_method('POST');
+        $in = $this->input();
+        $raw_token = trim((string) ($in['token'] ?? ''));
+        $password  = (string) ($in['password'] ?? '');
+
+        if ($raw_token === '' || strlen($raw_token) !== 64 || !ctype_xdigit($raw_token)) {
+            $this->fail('Invalid or missing activation token.', 400);
+        }
+        if (!$this->strong_password($password)) {
+            $this->fail('Choose a stronger password.', 422, ['password' => 'At least 8 characters with a letter and a number.']);
+        }
+
+        $this->call->model('Tenant_invitation_model');
+        $token_hash = hash('sha256', $raw_token);
+        $record = $this->Tenant_invitation_model->complete_activation($token_hash, $password, $this->User_model);
+
+        if (!$record) {
+            $this->fail('This invitation link is invalid, expired, or has already been used.', 409);
+        }
+
+        $user = $this->User_model->find_by_id($record['user_id']);
+        $tokens = $this->api->issue_tokens(['id' => (int) $user['id'], 'role' => $user['role']]);
+        $this->ok([
+            'message' => 'Account activated successfully! Welcome to RentEase.',
+            'user'    => $this->public_user($user),
+            'tokens'  => $tokens,
+        ]);
+    }
+
+    public function activate_tenant_google()
+    {
+        $this->api->require_method('POST');
+        $this->call->library('google_auth');
+        if (!$this->google_auth->configured()) {
+            $this->fail('Google sign-in is not set up on this server.', 503);
+        }
+
+        $in = $this->input();
+        $raw_token  = trim((string) ($in['token'] ?? ''));
+        $credential = (string) ($in['credential'] ?? '');
+
+        if ($raw_token === '' || strlen($raw_token) !== 64 || !ctype_xdigit($raw_token)) {
+            $this->fail('Invalid or missing activation token.', 400);
+        }
+
+        $profile = $this->google_auth->verify($credential);
+        if (!$profile) {
+            $this->fail('Google verification failed. Please try again.', 401);
+        }
+
+        $this->call->model('Tenant_invitation_model');
+        $token_hash = hash('sha256', $raw_token);
+        $record = $this->Tenant_invitation_model->find_valid($token_hash);
+
+        if (!$record) {
+            $this->fail('This invitation link is invalid or has expired.', 409);
+        }
+
+        // Verify that the Google email matches the tenant email address
+        if (strtolower($profile['email']) !== strtolower($record['email'])) {
+            $this->fail('Please sign in with the Google Account assigned to this invitation (' . $record['email'] . ').', 403);
+        }
+
+        $activated = $this->Tenant_invitation_model->complete_activation_google($token_hash, $profile['sub'], $this->User_model);
+        if (!$activated) {
+            $this->fail('Failed to activate account. The invitation may have expired.', 409);
+        }
+
+        $user = $this->User_model->find_by_id($record['user_id']);
+        $tokens = $this->api->issue_tokens(['id' => (int) $user['id'], 'role' => $user['role']]);
+        $this->ok([
+            'message' => 'Account activated and linked with Google! Welcome to RentEase.',
+            'user'    => $this->public_user($user),
+            'tokens'  => $tokens,
+        ]);
     }
 }

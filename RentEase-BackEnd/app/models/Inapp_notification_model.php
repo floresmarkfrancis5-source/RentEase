@@ -44,6 +44,17 @@ class Inapp_notification_model extends Model
             ->count();
     }
 
+    public function unread_counts_by_type($user_id)
+    {
+        return $this->db->raw(
+            'SELECT type, COUNT(*) AS count
+               FROM in_app_notifications
+              WHERE user_id = ? AND is_read = 0
+              GROUP BY type',
+            [(int) $user_id]
+        )->fetchAll(PDO::FETCH_KEY_PAIR);
+    }
+
     public function mark_read($id, $user_id)
     {
         return $this->db->table($this->table)
@@ -68,5 +79,20 @@ class Inapp_notification_model extends Model
             ->where('user_id', (int) $user_id)
             ->where('is_read', 0)
             ->update(['is_read' => 1]);
+    }
+
+    public function mark_types_read($user_id, array $types)
+    {
+        if (!$types) {
+            return 0;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($types), '?'));
+        return $this->db->raw(
+            'UPDATE in_app_notifications
+                SET is_read = 1
+              WHERE user_id = ? AND is_read = 0 AND type IN (' . $placeholders . ')',
+            array_merge([(int) $user_id], array_values($types))
+        )->rowCount();
     }
 }

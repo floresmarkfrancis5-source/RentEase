@@ -2,8 +2,8 @@
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
 /**
- * AssetController - serves the site images (logo, hero, login) that the admin uploaded.
- *   GET /api/assets/{key}      public (these images are shown on the public homepage)
+ * AssetController - serves public images uploaded for one landlord's tenant experience.
+ *   GET /api/assets/{key}?owner={landlord_id}
  * The URL stored in the settings carries ?v=<timestamp>, so the browser can cache it "forever"
  * and a new upload still shows up immediately.
  */
@@ -21,7 +21,11 @@ class AssetController extends BaseApiController
         if (!isset(Site_asset_model::KEYS[$key])) {
             $this->fail('Not found.', 404);
         }
-        $row = $this->Site_asset_model->get($key);
+        $owner_id = filter_var($_GET['owner'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($owner_id === false || $owner_id === null) {
+            $this->fail('Not found.', 404);
+        }
+        $row = $this->Site_asset_model->get($key, $owner_id);
         if (!$row) {
             $this->fail('Not found.', 404);
         }

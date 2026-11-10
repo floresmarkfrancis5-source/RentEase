@@ -14,7 +14,7 @@ Rental billing system for landlords and tenants of apartments and boarding house
 | Maintenance | Tenants file repair requests, landlord updates status |
 | Notifications & receipts | SMTP e-mails (PHPMailer), PDF receipts and statements (Dompdf), due-date reminders (cron) |
 | Dashboard & reports | Collected / outstanding / overdue, occupancy, 6-month billed vs collected |
-| Site settings | Admin edits site name, **logo**, **homepage hero image**, **login image**, colours, glass look, default theme (public `GET /api/settings`; images via `PUT /api/admin/settings/image`) |
+| Site settings | Each landlord has private colours, theme, tenant welcome page and sidebar logo. These settings are shared only with that landlord's tenants (`GET /api/my/settings`); public RentEase branding stays fixed. |
 | Login | Email **or** username + password |
 
 ## MVC layout (LavaLust)
@@ -26,11 +26,18 @@ app/
   views/         Views – e-mail template, PDF receipt/statement, API landing page
   middlewares/   Security middleware (see below)
   libraries/     Mailer, Pdf, Paymongo, Google_auth, Notifier
-  migrations/    000–019 – the database, created with `php lava migration run`
+  migrations/    000–032 – the database, created with `php lava migration run`
 database/        schema.sql, seed.sql, useful_queries.sql
 docs/            SECURITY.md, API.md
 ```
 The React app is the "view" of the system for users; the API views render e-mails and PDFs.
+
+### API and database conventions
+Controllers inherit from `BaseApiController`, which loads LavaLust's `api` library; use `$this->api` for
+request parsing, method checks, token handling, and JSON responses. Keep database access in models through
+LavaLust's `$this->db` connection and query builder. Use its parameterized `raw()` method only for queries
+that need SQL features the builder cannot express. Do not create a separate PDO connection or replacement API
+library. The frontend's shared HTTP client only sends requests to these LavaLust routes.
 
 ## Security middleware (`app/middlewares/`, registered in `app/config/middleware.php`)
 | Middleware | Applies to | Protects against |
@@ -75,6 +82,18 @@ VALUES ('admin', 'you@example.com', '<paste hash>', 'Your Name', 'admin', 1);
 Follow `docs/RENTEASE_SUBMISSION_GUIDE.md` (in the package root). Environment variables are listed in
 `.env.example`; **never commit `.env`** – it is git-ignored. The `Dockerfile` runs `composer install`.
 
+### Dashboard performance diagnostics
+The landlord dashboard combines its two monthly chart queries into one database round-trip. Its
+authenticated response includes a `Server-Timing` header with per-query and total dashboard durations;
+the header contains no SQL statements, parameter values, or landlord identifiers. Browser developer
+tools show this header on the `/api/admin/dashboard` request. The query durations exclude API startup,
+authentication, and database connection setup. The global throttle remains enabled and uses the file
+cache; it no longer opens a database connection for routes that do not otherwise need one. Private
+requests also avoid a redundant user lookup: `AuthMiddleware` performs the live role, account-status,
+and tenant-landlord checks in one database query. If the `Server-Timing` response header is unavailable,
+temporarily set `DASHBOARD_QUERY_TIMING=true` in Render and inspect the service logs for the same
+per-query durations. Turn the setting off after collecting them.
+
 ## First superadmin
 Before applying migration 018, set `SUPERADMIN_BOOTSTRAP_EMAIL`, `SUPERADMIN_BOOTSTRAP_USERNAME`,
 `SUPERADMIN_BOOTSTRAP_FULL_NAME`, and a unique `SUPERADMIN_BOOTSTRAP_PASSWORD` (12+ characters) privately
@@ -90,4 +109,4 @@ Password recovery links require working SMTP settings and `FRONTEND_URL`; links 
 LavaLust's library-specific configs in `app/config/` (except database and framework settings, which use their existing config files).
 
 ## Updating an existing database (e.g. Aiven)
-After pulling this version run `php lava migration run` once more to apply any unapplied migrations. For a progress-check walkthrough, see `docs/PROGRESS_CHECK_GUIDE.md`.
+Back up the database, then run `php lava migration run` once to apply any unapplied migrations. Migration 030 stops with the tenant ID if existing duplicate active leases would violate the new one-current-lease rule; resolve those records before retrying. For a progress-check walkthrough, see `docs/PROGRESS_CHECK_GUIDE.md`.

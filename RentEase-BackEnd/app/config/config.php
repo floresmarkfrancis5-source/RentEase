@@ -56,6 +56,7 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 | LavaLust Version
 | -------------------------------------------------------------------
 */
+ini_set('default_socket_timeout', 4);
 $config['version']                 = '4.6.0';
 
 /*

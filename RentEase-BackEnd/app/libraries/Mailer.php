@@ -27,7 +27,7 @@ class Mailer
      * @param array $attachments  [['name' => 'receipt.pdf', 'data' => <binary>, 'type' => 'application/pdf'], ...]
      * @return string sent | failed | skipped
      */
-    public function send($user_id, $type, $related_id, $to, $subject, $html, array $attachments = [])
+    public function send($user_id, $type, $related_id, $to, $subject, $html, array $attachments = [], $async = true)
     {
         $log = $this->_lava->Notification_model;
 
@@ -36,6 +36,75 @@ class Mailer
             return 'skipped';
         }
 
+        // Asynchronous background dispatch (prevents Gmail SMTP network round-trips from freezing PHP)
+        if ($async) {
+            $is_windows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+            if (!function_exists('exec')) {
+                $log->log($user_id, $type, $related_id, $to, $subject, 'failed', 'Async email worker cannot be started in this runtime');
+                return 'failed';
+            }
+
+            $queue_dir = ROOT_DIR . 'runtime' . DIRECTORY_SEPARATOR . 'mail_queue';
+            if (!is_dir($queue_dir) && !@mkdir($queue_dir, 0700, true) && !is_dir($queue_dir)) {
+                $log->log($user_id, $type, $related_id, $to, $subject, 'failed', 'Could not create the private email queue');
+                return 'failed';
+            }
+            if (!is_writable($queue_dir)) {
+                $log->log($user_id, $type, $related_id, $to, $subject, 'failed', 'The email queue is not writable');
+                return 'failed';
+            }
+            @chmod($queue_dir, 0700);
+
+            $job_data = [
+                'user_id'     => $user_id,
+                'type'        => $type,
+                'related_id'  => $related_id,
+                'to'          => $to,
+                'subject'     => $subject,
+                'html'        => $html,
+                'attachments' => $attachments,
+            ];
+
+            $job_file = $queue_dir . DIRECTORY_SEPARATOR . 'mail_' . uniqid('', true) . '_' . mt_rand(1000, 9999) . '.json';
+            $encoded_job = json_encode($job_data, JSON_UNESCAPED_UNICODE);
+            if ($encoded_job === false || file_put_contents($job_file, $encoded_job, LOCK_EX) === false) {
+                $log->log($user_id, $type, $related_id, $to, $subject, 'failed', 'Could not write the email job');
+                return 'failed';
+            }
+            @chmod($job_file, 0600);
+
+            $worker = ROOT_DIR . 'console' . DIRECTORY_SEPARATOR . 'mail_worker.php';
+            if (!is_file($worker)) {
+                @unlink($job_file);
+                $log->log($user_id, $type, $related_id, $to, $subject, 'failed', 'Email worker script is missing');
+                return 'failed';
+            }
+
+            try {
+                if ($is_windows) {
+                    $cmd = 'start "" /B ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($worker) . ' ' . escapeshellarg($job_file) . ' >NUL 2>&1';
+                    exec($cmd, $output, $exit_code);
+                    if ($exit_code !== 0) {
+                        throw new RuntimeException('Could not launch the email worker');
+                    }
+                } else {
+                    $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($worker) . ' ' . escapeshellarg($job_file) . ' > /dev/null 2>&1 &';
+                    exec($cmd, $output, $exit_code);
+                    if ($exit_code !== 0) {
+                        throw new RuntimeException('Could not launch the email worker');
+                    }
+                }
+            } catch (Throwable $e) {
+                @unlink($job_file);
+                $log->log($user_id, $type, $related_id, $to, $subject, 'failed', $e->getMessage());
+                return 'failed';
+            }
+
+            $log->log($user_id, $type, $related_id, $to, $subject, 'sent');
+            return 'sent';
+        }
+
+        // Synchronous fallback
         try {
             $m = new PHPMailer\PHPMailer\PHPMailer(true);
             $m->isSMTP();
@@ -49,7 +118,7 @@ class Mailer
                 $m->Username = config_item('mailer_smtp_user');
                 $m->Password = (string) config_item('mailer_smtp_pass');
             }
-            $m->Timeout = 15;
+            $m->Timeout = 5;
             $m->CharSet = 'UTF-8';
             $m->setFrom(config_item('mailer_from'), config_item('mailer_from_name'));
             $m->addAddress($to);

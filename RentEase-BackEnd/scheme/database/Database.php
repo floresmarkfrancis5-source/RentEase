@@ -267,6 +267,10 @@ class Database {
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
         );
+        if ($driver === 'mysql') {
+            $connect_timeout = getenv('DB_CONNECT_TIMEOUT');
+            $options[PDO::ATTR_TIMEOUT] = max(1, min(15, $connect_timeout === false ? 5 : (int) $connect_timeout));
+        }
 
         // Optional SSL/TLS for MySQL (required by Aiven). Enable with DB_SSL=true.
         // DB_SSL_CA        = path to the CA certificate file, OR

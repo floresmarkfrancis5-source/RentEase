@@ -4,9 +4,10 @@ Base URL: `https://<your-api>.onrender.com`. JSON in, JSON out. Private routes n
 ## Public
 | Method | Route | |
 |---|---|---|
-| GET | `/api/health` | liveness |
-| GET | `/api/settings` | site name, colours, hero text, theme defaults, logo/hero/login image links |
-| GET | `/api/assets/{logo\|hero\|login}` | the uploaded image (public, ETag + long cache) |
+| GET | `/api/health` | API process liveness |
+| GET | `/api/health/ready` | Aiven database readiness and connection-check duration |
+| GET | `/api/settings` | fixed RentEase defaults for public pages |
+| GET | `/api/assets/{logo\|hero}?owner={landlord_id}` | landlord-specific public sidebar logo or tenant homepage image (ETag + long cache) |
 | POST | `/api/auth/login` · `/api/auth/google` · `/api/auth/refresh` | `{email,password}` · `{credential}` · `{refresh_token}` (10/min/IP) |
 | POST | `/api/auth/register` | `{username,email,full_name,password}`; creates a landlord (`admin`) account |
 | POST | `/api/auth/google/register` | `{credential,username}`; creates a landlord account and starts onboarding |
@@ -16,7 +17,7 @@ Base URL: `https://<your-api>.onrender.com`. JSON in, JSON out. Private routes n
 | POST | `/api/cron/reminders` | header `X-Cron-Token` |
 
 ## Any signed-in user
-`POST /api/auth/logout` · `GET /api/auth/me` · `POST /api/auth/change-password` ·
+`POST /api/auth/logout` · `GET /api/auth/me` · `GET /api/my/settings` · `POST /api/auth/change-password` ·
 `GET /api/bills/{id}/statement` (PDF) · `GET /api/payments/{id}/receipt` (PDF) – owner or landlord only.
 
 ## Landlord – prefix `/api/admin` (role `admin`)
@@ -24,23 +25,23 @@ Base URL: `https://<your-api>.onrender.com`. JSON in, JSON out. Private routes n
 |---|---|
 | dashboard | `GET dashboard`, `GET notifications` (email log) |
 | onboarding | `GET onboarding`, `POST onboarding`, `POST onboarding/skip` |
-| AI assistant | `GET assistant/conversations`, `POST assistant/conversations`, `GET/DELETE assistant/conversations/{id}`, `POST assistant/conversations/{id}/confirmation`; `POST assistant/chat {message,conversation_id?,edit_message_id?}` (Gemini drafts only; saved per landlord; editing regenerates from that prompt) |
-| in-app notifications | `GET in-app-notifications`, `GET in-app-notifications/unread-count`, `PATCH in-app-notifications/{id}/read`, `PATCH in-app-notifications/read-all` |
-| transfers | `GET transfer-requests`, `PATCH transfer-requests/{id} {status: approved|rejected, admin_note?}` |
+| AI assistant | `GET assistant/conversations`, `POST assistant/conversations`, `GET/DELETE assistant/conversations/{id}`, `POST assistant/conversations/{id}/confirmation`; `POST assistant/chat {message,conversation_id?,edit_message_id?}` (read-only landlord record lookups and editable setup/contract drafts); `POST assistant/insights {action: overdue|income|repairs}` (read-only, landlord-scoped); `POST assistant/units {property_id,units:[...]}` (adds 1–100 reviewed units atomically to a landlord-owned property) |
+| in-app notifications | `GET in-app-notifications`, `GET in-app-notifications/unread-count`, `GET in-app-notifications/sidebar-counts`, `PATCH in-app-notifications/sections/{section}/read`, `PATCH in-app-notifications/{id}/read`, `PATCH in-app-notifications/read-all` |
+| transfers and early move-in | `GET transfer-requests`, `PATCH/DELETE transfer-requests/{id}`; `GET early-move-requests`, `PATCH early-move-requests/{id} {status: approved|rejected, admin_note?}`, `DELETE early-move-requests/{id}` |
 | profile (any logged-in user) | `GET/PUT /api/profile`, `GET/PUT/DELETE /api/profile/photo` |
-| settings | `PUT settings`, `POST settings/reset`, `GET settings/history`, `PUT settings/image` (body `{key, image: dataURL}`), `DELETE settings/image/{key}` |
+| settings | `PUT settings`, `POST settings/reset`, `GET settings/history`, `PUT settings/image` (body `{key, image: dataURL}`), `DELETE settings/image/{key}`; appearance and billing defaults are scoped to the signed-in landlord |
 | properties | `GET/POST properties`, `GET/PUT/DELETE properties/{id}` |
 | units | `GET/POST units`, `GET/PUT/DELETE units/{id}` |
-| tenants | `GET/POST tenants`, `GET/PUT/DELETE tenants/{id}`, `POST tenants/{id}/reset-password`; create accepts a vacant good-condition `unit_id` and creates its active lease atomically |
-| leases | `GET/POST leases`, `GET/PUT/PATCH/DELETE leases/{id}`, `POST leases/{id}/end`, `POST leases/{id}/renew {end_date,monthly_rent?,deposit?,due_day?}`, `GET leases/{id}/history` |
+| tenants | `GET/POST tenants`, `GET/PUT/DELETE tenants/{id}`, `POST tenants/{id}/reset-password`; new tenant leases may be offered or scheduled to start on a future move-in date |
+| leases | `GET/POST leases`, `GET/PUT/PATCH/DELETE leases/{id}`, `POST leases/{id}/end`, `POST leases/{id}/renew {end_date,monthly_rent?,deposit?,due_day?}`, `GET leases/{id}/history`; each lease snapshots its billing style, first-month proration, grace period, and late fee |
 | lease documents | `GET/POST leases/{id}/documents` (`{name,document:dataURL}`), `GET/DELETE leases/{id}/documents/{document_id}`; private PDF files up to 5 MB, scoped to the landlord |
 | bills | `GET bills[?status=&month=&tenant_id=]`, `POST bills/generate {month:"YYYY-MM"}`, `GET/DELETE bills/{id}`, `POST bills/{id}/remind` |
 | payments | `GET payments`, `POST payments {bill_id, method: cash|bank_transfer, notes}` |
-| maintenance | `GET maintenance`, `PUT maintenance/{id} {status, priority, admin_notes}` |
+| maintenance | `GET maintenance`, `PUT maintenance/{id} {status, admin_notes}`; the tenant's selected category sets urgency, except tenants choose urgency for `Other`; unit records include counts of open repair requests |
 
 ## Tenant – prefix `/api/my` (role `tenant`)
-`GET summary` · `GET bills` · `POST bills/{id}/pay` (returns `checkout_url`) · `GET payments` ·
-`POST payments/{id}/verify` · `GET maintenance` · `POST maintenance {title, description, priority}` ·
+`GET summary` · `POST leases/{id}/accept {agree:true}` · `GET/POST early-move-requests` · `DELETE early-move-requests/{id}` (cancel a pending request) · `GET bills` · `POST bills/{id}/pay` (returns `checkout_url`) · `GET payments` ·
+`POST payments/{id}/verify` · `GET maintenance` · `POST maintenance {category, title?, description, priority?, images?}` (requires an active lease; priority is category-assigned except for `Other`, where `priority` may be `low`, `medium`, or `high`) ·
 `GET available-units` · `GET/POST transfer-requests` · `GET notifications` · `GET notifications/unread-count` ·
 `PATCH notifications/{id}/read` · `PATCH notifications/read-all`
 
@@ -48,9 +49,9 @@ Base URL: `https://<your-api>.onrender.com`. JSON in, JSON out. Private routes n
 
 Landlord signup remains public and uses the existing `admin` role; platform-wide administration is separately protected by the `superadmin` role. Each landlord-created tenant is associated with that landlord. Admin rental-data endpoints scope results and record lookups to the authenticated landlord.
 
-`POST /api/admin/onboarding` creates the property, units, and any optional tenant accounts/leases in one transaction. The body is `{property:{name,type,address,city,barangay,latitude,longitude,description},units:[{unit_name,monthly_rent,capacity,condition_tag}],tenants:[{username,email,full_name,phone,unit_index,start_date,monthly_rent,deposit,due_day}]}`. It returns generated tenant temporary passwords once. `POST /api/admin/onboarding/skip` marks setup complete without creating records.
+`POST /api/admin/onboarding` creates the property, units, and any optional tenant accounts/leases in one transaction. It accepts optional property/unit contract templates and unit rent/deposit/due-day defaults; move-in defaults to five days ahead and annual lease end dates are calculated by the API. Billing defaults are copied onto each new lease; a tenant may request an earlier date for a scheduled lease, which the landlord must approve. It returns generated tenant temporary passwords once. `POST /api/admin/onboarding/skip` marks setup complete without creating records.
 
-Gemini chat accepts no database actions: `POST /api/admin/assistant/chat` receives `{message,history}` and returns a reply plus an optional editable proposal. The landlord must confirm a proposal using the onboarding endpoint before any rental records are saved. Configure `GEMINI_API_KEY` on the API server to enable it.
+`POST /api/admin/assistant/chat` answers supported landlord-record questions using read-only queries scoped to the authenticated landlord (including properties/locations, units/vacancies, tenants/leases, unpaid bills, payments, open repairs, and pending transfer/move-in requests). These query results are not sent to Gemini; they are excluded from later model context as well. Gemini can return editable property or contract-template drafts, but does not save them. Property/unit setup is saved only after confirmation through the onboarding or unit endpoints. Contract-template additions, house rules, utilities, and notice/payment settings are merged with the selected landlord-owned property or unit template and saved only after an explicit review and confirmation through the existing property/unit update routes. Assistant insights read landlord-owned overdue bills, active-lease income, and open maintenance requests without updating records. Configure `GEMINI_API_KEY` on the API server to enable drafting.
 
 ## Platform superadmin – prefix `/api/superadmin` (role `superadmin`)
 
@@ -60,7 +61,7 @@ Gemini chat accepts no database actions: `POST /api/admin/assistant/chat` receiv
 
 Migration 018 adds the role and password-reset token table. Before running it, configure `SUPERADMIN_BOOTSTRAP_EMAIL`, `SUPERADMIN_BOOTSTRAP_USERNAME`, `SUPERADMIN_BOOTSTRAP_FULL_NAME`, and `SUPERADMIN_BOOTSTRAP_PASSWORD` privately in the backend environment. The migration creates the first superadmin only when none exists; remove the bootstrap password from the environment after migration. There is no public superadmin signup.
 
-Migration 019 adds lease event history and private PDF attachments. Active lease terms can be edited; renewal extends the same lease record and logs the before/after terms so existing bills remain attached. The printable agreement is a draft template; parties should complete and review any additional terms before signing.
+Migration 019 adds lease event history and private PDF attachments. Migration 030 adds landlord contract templates, unit defaults, scheduled/offered leases, and tenant acceptance; migration 031 adds repair categories with server-assigned urgency; migration 032 adds per-lease billing snapshots, late-fee tracking, and early move-in requests. Active lease terms can be edited; renewal extends the same lease record and logs the before/after terms so existing bills remain attached. Printed contracts are drafts; parties should review them and applicable requirements before signing.
 
 Email password recovery requires SMTP (`SMTP_*`, `MAIL_FROM`) and `FRONTEND_URL`. Reset tokens expire after 30 minutes and can only be used once. Google OAuth is deferred; the frontend currently shows disabled placeholder buttons.
 

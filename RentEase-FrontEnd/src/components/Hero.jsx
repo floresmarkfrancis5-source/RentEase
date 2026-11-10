@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { assetUrl, splitHeadline } from '../lib/brand'
 import HeroArt from './HeroArt'
 import { reducedMotion, useDust } from './motion'
+import { useLanguage } from '../context/LanguageContext'
 
 const FEATS = [
   ['Units &', 'leases', 'M6 40V10l18-6 18 6v30M6 40h36M16 18h4M28 18h4M16 26h4M28 26h4M20 40v-8h8v8'],
@@ -15,13 +16,14 @@ const FEATS = [
  * Full-bleed homepage hero. Takes settings as props so the admin page can preview a draft
  * (compact = smaller, no scroll effects; inert = links are not focusable).
  */
-export default function Hero({ s, compact = false, inert = false, play = true }) {
+export default function Hero({ s, compact = false, inert = false, play = true, tenant = false, defaultImage = false }) {
+  const { t } = useLanguage()
   const root = useRef(null)
   const media = useRef(null)
   const copy = useRef(null)
   const dust = useRef(null)
-  const [l1, l2] = splitHeadline(s.hero_title)
-  const img = assetUrl(s.hero_image_url)
+  const [l1, l2] = splitHeadline(t(s.hero_title))
+  const img = defaultImage ? '/images/rentease-homepage-default.jpg' : assetUrl(s.hero_image_url)
   const [imgOk, setImgOk] = useState(true)
   useEffect(() => setImgOk(true), [img])
 
@@ -66,14 +68,14 @@ export default function Hero({ s, compact = false, inert = false, play = true })
 
       <div className="wrap">
         <div className="hero-copy" ref={copy}>
-          <span className="eyebrow rv" style={{ '--d': 0.05 }}>{s.site_tagline || s.site_name}</span>
+          <span className="eyebrow rv" style={{ '--d': 0.05 }}>{tenant ? t('Your rental home') : t(s.site_tagline || s.site_name)}</span>
           <h1>
             <span className="line" style={{ '--i': 0 }}><span>{l1}</span></span>
             {l2 && <span className="line" style={{ '--i': 1 }}><span className="hana">{l2}</span></span>}
           </h1>
-          <p className="lead rv" style={{ '--d': 0.55 }}>{s.hero_subtitle}</p>
+          <p className="lead rv" style={{ '--d': 0.55 }}>{t(s.hero_subtitle)}</p>
 
-          {!compact && (
+          {!compact && !tenant && (
             <div className="hero-feats">
               {FEATS.map(([a, b, d], i) => (
                 <div className="feat rv" style={{ '--d': 0.75 + i * 0.1 }} key={a}>
@@ -84,16 +86,16 @@ export default function Hero({ s, compact = false, inert = false, play = true })
             </div>
           )}
 
-          <Link to="/login" className="btn btn-light rv" style={{ '--d': 1.2 }} tabIndex={inert ? -1 : undefined}>
-            {s.hero_cta_text}
+          <Link to={tenant ? '/tenant' : '/login'} className="btn btn-light rv" style={{ '--d': 1.2 }} tabIndex={inert ? -1 : undefined}>
+            {t(s.hero_cta_text)}
             <svg className="arr" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
           </Link>
 
-          {!compact && <div className="hero-tag rv" style={{ '--d': 1.3 }}><i />Less paperwork<br />More peace of mind</div>}
+          {!compact && !tenant && <div className="hero-tag rv" style={{ '--d': 1.3 }}><i />{t('Less paperwork')}<br />{t('More peace of mind')}</div>}
         </div>
       </div>
 
-      {!compact && <div className="scroll-cue rv" style={{ '--d': 1.6 }} aria-hidden="true"><span>Scroll</span><i /></div>}
+      {!compact && !tenant && <div className="scroll-cue rv" style={{ '--d': 1.6 }} aria-hidden="true"><span>Scroll</span><i /></div>}
     </section>
   )
 }

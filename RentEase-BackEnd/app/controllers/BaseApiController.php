@@ -46,8 +46,86 @@ class BaseApiController extends Controller
         return $row;
     }
 
+    protected function contract_template($value)
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_string($value)) {
+            $value = json_decode($value, true);
+        }
+        if (!is_array($value) || !is_array($value['clauses'] ?? null) || count($value['clauses']) > 16) {
+            $this->fail('Check the lease contract clauses.', 422, ['contract_template' => 'Invalid contract template.']);
+        }
+
+        $clauses = [];
+        foreach ($value['clauses'] as $index => $clause) {
+            if (!is_array($clause)) {
+                $this->fail('Check the lease contract clauses.', 422, ['contract_template' => 'Each clause needs a title and wording.']);
+            }
+            $title = trim((string) ($clause['title'] ?? ''));
+            $text = trim((string) ($clause['text'] ?? ''));
+            if ($title === '' || mb_strlen($title) > 100 || $text === '' || mb_strlen($text) > 3000) {
+                $this->fail('Check the lease contract clauses.', 422, [
+                    'contract_template' => 'Each clause needs a title (up to 100 characters) and wording (up to 3,000 characters).',
+                ]);
+            }
+            $clauses[] = [
+                'id' => preg_replace('/[^a-z0-9_-]/', '', strtolower((string) ($clause['id'] ?? ('clause-' . $index)))),
+                'title' => $title,
+                'text' => $text,
+                'enabled' => !empty($clause['enabled']),
+            ];
+        }
+
+        $rules = [];
+        foreach (($value['rules'] ?? []) as $rule) {
+            if (!is_string($rule)) {
+                continue;
+            }
+            $rule = trim($rule);
+            if ($rule !== '' && mb_strlen($rule) <= 500 && count($rules) < 30) {
+                $rules[] = $rule;
+            }
+        }
+
+        $utilities = [];
+        foreach (['electricity', 'water', 'internet'] as $utility) {
+            $responsibility = $value['utilities'][$utility] ?? 'Tenant';
+            $utilities[$utility] = in_array($responsibility, ['Tenant', 'Landlord', 'Shared'], true) ? $responsibility : 'Tenant';
+        }
+        $notice_rules = [
+            'entry_hours' => [0, 168],
+            'termination_days' => [0, 365],
+            'unpaid_months' => [0, 24],
+            'refund_days' => [0, 365],
+            'grace_days' => [0, 31],
+            'late_fee' => [0, 99999999.99],
+        ];
+        $notices = [];
+        foreach ($notice_rules as $key => [$min, $max]) {
+            $number = $value['notices'][$key] ?? 0;
+            if (!is_numeric($number) || $number < $min || $number > $max) {
+                $this->fail('Check the contract notice and payment settings.', 422, [
+                    'contract_template' => 'Notice periods, grace days, and late fees must be within their allowed ranges.',
+                ]);
+            }
+            $notices[$key] = $key === 'late_fee' ? round((float) $number, 2) : (int) $number;
+        }
+
+        return json_encode([
+            'enabled' => !empty($value['enabled']),
+            'clauses' => $clauses,
+            'rules' => $rules,
+            'utilities' => $utilities,
+            'notices' => $notices,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
     protected function uid()   { return Req_context::user_id(); }
     protected function admin() { return Req_context::is_admin(); }
+    protected function user()  { return Req_context::user(); }
+    protected function role()  { return Req_context::role(); }
 
     /**
      * Mini validator.  $rules = ['field' => ['type' => 'string|email|int|decimal|date|enum|bool', ...]]

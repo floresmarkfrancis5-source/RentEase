@@ -65,6 +65,8 @@ git push -u origin main
 | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | from Aiven |
 | `DB_SSL` | `true` |
 | `DB_SSL_CA_CONTENT` | whole contents of `ca.pem` |
+| `DB_CONNECT_TIMEOUT` | `5` seconds (fail fast if Aiven cannot be reached) |
+| `DASHBOARD_QUERY_TIMING` | normally `false`; temporarily set to `true` to log safe dashboard timings |
 | `JWT_SECRET`, `REFRESH_TOKEN_KEY` | two different 64-character random strings (`php -r "echo bin2hex(random_bytes(32));"`) |
 | `CORS_ORIGIN` | the frontend URL (after step 5) |
 | `FRONTEND_URL` | the frontend URL (PayMongo return links and e-mail buttons) |
@@ -72,10 +74,16 @@ git push -u origin main
 | `PAYMONGO_SECRET_KEY`, `PAYMONGO_WEBHOOK_SECRET` | PayMongo **test** keys (step 7) |
 | `GOOGLE_CLIENT_ID` | optional (step 8) |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | optional Gemini landlord assistant; keep the key on the API server only |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `MAIL_FROM` | optional (step 9) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `MAIL_FROM` | optional; Render Free blocks SMTP ports 25, 465, and 587, so use a paid API service or an HTTPS email provider there |
 
 Do **not** set `MIGRATION_ENABLED` on Render (the `dev_only` middleware also returns 404 for migration URLs in production).
 3. Open `https://<api>.onrender.com/api/health` → `{"status":"ok"…}`. That URL (without `/api/health`) is the **Render API URL**.
+   To check the Aiven connection too, open `https://<api>.onrender.com/api/health/ready`; it reports API/database readiness and database-check duration.
+   To profile a signed-in landlord dashboard, open the browser developer tools Network panel, reload the dashboard,
+   select `/api/admin/dashboard`, and inspect its `Server-Timing` response header. It reports per-query and total
+   dashboard durations without SQL or parameter values; timings exclude authentication and database connection setup.
+   If the header is unavailable, temporarily set `DASHBOARD_QUERY_TIMING=true` and inspect the Render service logs
+   for `RentEase dashboard timings`. Turn the setting off after testing.
 
 ## Step 5 – Deploy the React app on Render
 **New + → Static Site** → FrontEnd repo. Build `npm install && npm run build`, publish `dist`.
@@ -118,6 +126,7 @@ are then logged as “skipped” in **Notifications**. For due-date reminders cr
 ```
 curl -fsS -X POST -H "X-Cron-Token: $CRON_TOKEN" -H "Content-Type: application/json" -d '{}' https://<api>.onrender.com/api/cron/reminders
 ```
+The same daily endpoint also activates scheduled leases on their move-in date and expires contract offers that were not accepted by that date.
 
 ## Submission checklist
 - [ ] GitHub repo – LavaLust API (`RentEase-BackEnd`)
@@ -130,11 +139,24 @@ curl -fsS -X POST -H "X-Cron-Token: $CRON_TOKEN" -H "Content-Type: application/j
 - [ ] React app does not connect to Aiven directly
 - [ ] Demo passwords from `seed.sql` changed or removed
 
+## Presentation connectivity checklist
+The live demo depends on internet access from the presentation device to the frontend, LavaLust API, Aiven
+database, and any third-party services used in the demo.
+- [ ] Use a reliable high-speed connection; prefer wired Ethernet or a strong, tested Wi-Fi network.
+- [ ] Keep a phone hotspot or other independent connection ready as a backup.
+- [ ] Before presenting, open the frontend and `https://<api>.onrender.com/api/health` from the presentation network.
+- [ ] Sign in and test the exact demo flow in advance. Wake the Render API shortly before the presentation to avoid a cold-start delay.
+- [ ] Choose the same (or nearest available) region for the Render API and Aiven MySQL to reduce database network latency.
+- [ ] Confirm any integrations you plan to demonstrate (such as PayMongo, Google sign-in, or email) are reachable and configured.
+
 ## Troubleshooting
 | Symptom | Fix |
 |---|---|
-| “Cannot reach the server” | wrong `VITE_API_URL`, API asleep (free Render ~50 s), or frontend URL missing in `CORS_ORIGIN` |
-| API database error | check `DB_*`, `DB_SSL=true`, `DB_SSL_CA_CONTENT`, Aiven allowed IPs |
+| Request times out after roughly 45 seconds | The frontend gives up after 45 seconds. Render Free services sleep after 15 minutes idle and can take about a minute to wake, so the first request can time out. Use an always-on API service for a demo; open `/api/health` before presenting to warm it. |
+| “Cannot contact the API” immediately | check the deployed frontend's `VITE_API_URL`, Render API availability, browser network errors, and that the frontend origin is in `CORS_ORIGIN`; rebuild/redeploy the frontend after changing `VITE_API_URL`. |
+| `/api/health` works but `/api/health/ready` is slow or unavailable | the API process is reachable but its Aiven connection is slow/down. Check `DB_*`, `DB_SSL=true`, `DB_SSL_CA_CONTENT`, Aiven service status/connection limits/allowed IPs, and keep Render and Aiven in nearby regions. |
+| Only email-related actions are slow or email is missing | SMTP runs in a background worker, so Gmail should not stall unrelated API requests. Render Free blocks outbound SMTP ports `25`, `465`, and `587`, so Gmail SMTP cannot deliver from a Free API service even with correct credentials. Use a paid Render service for Gmail SMTP (`smtp.gmail.com`, port `465`/SSL or `587`/TLS, Gmail App Password), or integrate an email provider's HTTPS API. |
+| API database error | check `DB_*`, `DB_SSL=true`, `DB_SSL_CA_CONTENT`, `DB_CONNECT_TIMEOUT`, Aiven allowed IPs |
 | `Middleware config not found` | `app/config/config.php` must `require_once APP_DIR . 'config/middleware.php'` (already included) |
 | Secret too short / Api disabled | `JWT_SECRET` / `REFRESH_TOKEN_KEY` missing, under 32 chars, or identical |
 | `Migrations are disabled` | `MIGRATION_ENABLED=true` in your local `.env` |

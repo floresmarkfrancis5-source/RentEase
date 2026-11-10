@@ -56,6 +56,17 @@ class Unit_transfer_model extends Model
         )->fetchColumn();
     }
 
+    public function has_requested_this_month($tenant_id)
+    {
+        return (bool) $this->db->raw(
+            "SELECT 1 FROM unit_transfer_requests 
+              WHERE tenant_id = ? 
+                AND created_at >= DATE_FORMAT(NOW(), '%Y-%m-01 00:00:00')
+              LIMIT 1",
+            [(int) $tenant_id]
+        )->fetchColumn();
+    }
+
     public function create_request($tenant_id, $current_unit_id, $requested_unit_id, $reason)
     {
         $this->db->table($this->table)->insert([
@@ -108,5 +119,17 @@ class Unit_transfer_model extends Model
             $this->db->roll_back();
             throw $e;
         }
+    }
+
+    public function delete_request($id, $tenant_id = null, $landlord_id = null)
+    {
+        $req = $this->find($id, false, $landlord_id);
+        if (!$req) {
+            return false;
+        }
+        if ($tenant_id !== null && (int) $req['tenant_id'] !== (int) $tenant_id) {
+            return false;
+        }
+        return (bool) $this->db->table($this->table)->where('id', (int) $id)->delete();
     }
 }

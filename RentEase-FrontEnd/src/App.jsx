@@ -1,37 +1,42 @@
+import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import DashLayout from './components/DashLayout'
 import Footer from './components/Footer'
 import Header from './components/Header'
 import { PageMotion } from './components/motion'
 import ProtectedRoute from './components/ProtectedRoute'
-import AdminBills from './pages/admin/Bills'
-import AdminDashboard from './pages/admin/Dashboard'
-import AdminAssistant from './pages/admin/Assistant'
-import AdminLeases from './pages/admin/Leases'
-import AdminMaintenance from './pages/admin/Maintenance'
-import AdminNotifications from './pages/admin/Notifications'
-import AdminPayments from './pages/admin/Payments'
-import AdminProperties from './pages/admin/Properties'
-import AdminTenants from './pages/admin/Tenants'
-import AdminTransfers from './pages/admin/TransferRequests'
-import AdminUnits from './pages/admin/Units'
-import Onboarding from './pages/Onboarding'
-import PasswordRecovery from './pages/PasswordRecovery'
-import AdminSettings from './pages/AdminSettings'
-import ChangePassword from './pages/ChangePassword'
-import Home from './pages/Home'
-import Login from './pages/Login'
-import Profile from './pages/Profile'
-import Register from './pages/Register'
-import SuperadminDashboard from './pages/SuperadminDashboard'
-import TenantBills from './pages/tenant/Bills'
-import TenantMaintenance from './pages/tenant/Maintenance'
-import TenantOverview from './pages/tenant/Overview'
-import TenantTransfers from './pages/tenant/Transfers'
+import { LoadingHouse } from './components/ui'
+
+const AdminBills = lazy(() => import('./pages/admin/Bills'))
+const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'))
+const AdminAssistant = lazy(() => import('./pages/admin/Assistant'))
+const AdminLeases = lazy(() => import('./pages/admin/Leases'))
+const AdminMaintenance = lazy(() => import('./pages/admin/Maintenance'))
+const AdminNotifications = lazy(() => import('./pages/admin/Notifications'))
+const AdminPayments = lazy(() => import('./pages/admin/Payments'))
+const AdminProperties = lazy(() => import('./pages/admin/Properties'))
+const AdminTenants = lazy(() => import('./pages/admin/Tenants'))
+const AdminTransfers = lazy(() => import('./pages/admin/TransferRequests'))
+const AdminUnits = lazy(() => import('./pages/admin/Units'))
+const Onboarding = lazy(() => import('./pages/Onboarding'))
+const PasswordRecovery = lazy(() => import('./pages/PasswordRecovery'))
+const ActivateTenant = lazy(() => import('./pages/ActivateTenant'))
+const AdminSettings = lazy(() => import('./pages/AdminSettings'))
+const ChangePassword = lazy(() => import('./pages/ChangePassword'))
+const Home = lazy(() => import('./pages/Home'))
+const Login = lazy(() => import('./pages/Login'))
+const Profile = lazy(() => import('./pages/Profile'))
+const Register = lazy(() => import('./pages/Register'))
+const SuperadminDashboard = lazy(() => import('./pages/SuperadminDashboard'))
+const TenantBills = lazy(() => import('./pages/tenant/Bills'))
+const TenantMaintenance = lazy(() => import('./pages/tenant/Maintenance'))
+const TenantOverview = lazy(() => import('./pages/tenant/Overview'))
+const TenantTransfers = lazy(() => import('./pages/tenant/Transfers'))
 
 export default function App() {
   const { pathname } = useLocation()
   const bleed = pathname === '/' || pathname === '/login' || pathname === '/register' // full-width pages (hero / split auth)
+  const isDash = pathname.startsWith('/admin') || pathname.startsWith('/tenant')
 
   return (
     <>
@@ -42,43 +47,46 @@ export default function App() {
       </div>
       <PageMotion />
       <Header />
-      <main className={bleed ? 'main-bleed' : 'page'}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/forgot-password" element={<PasswordRecovery />} />
-          <Route path="/reset-password" element={<PasswordRecovery />} />
-          <Route path="/onboarding" element={<ProtectedRoute role="admin"><Onboarding /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-          <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
-          <Route path="/superadmin" element={<ProtectedRoute role="superadmin"><SuperadminDashboard /></ProtectedRoute>} />
+      <main className={bleed ? 'main-bleed' : isDash ? 'main-dash' : 'page'}>
+        <Suspense fallback={<LoadingHouse label="Opening your page…" className="loading-house--route" />}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/activate" element={<ActivateTenant />} />
+            <Route path="/forgot-password" element={<PasswordRecovery />} />
+            <Route path="/reset-password" element={<PasswordRecovery />} />
+            <Route path="/onboarding" element={<ProtectedRoute role="admin"><Onboarding /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
+            <Route path="/superadmin" element={<ProtectedRoute role="superadmin"><SuperadminDashboard /></ProtectedRoute>} />
 
-          <Route path="/admin" element={<ProtectedRoute role="admin"><DashLayout role="admin" /></ProtectedRoute>}>
-            <Route index element={<AdminDashboard />} />
-            <Route path="properties" element={<AdminProperties />} />
-            <Route path="units" element={<AdminUnits />} />
-            <Route path="tenants" element={<AdminTenants />} />
-            <Route path="leases" element={<AdminLeases />} />
-            <Route path="bills" element={<AdminBills />} />
-            <Route path="payments" element={<AdminPayments />} />
-            <Route path="maintenance" element={<AdminMaintenance />} />
-            <Route path="transfers" element={<AdminTransfers />} />
-            <Route path="assistant" element={<AdminAssistant />} />
-            <Route path="notifications" element={<AdminNotifications />} />
-            <Route path="settings" element={<AdminSettings />} />
-          </Route>
+            <Route path="/admin" element={<ProtectedRoute role="admin"><DashLayout role="admin" /></ProtectedRoute>}>
+              <Route index element={<AdminDashboard />} />
+              <Route path="properties" element={<AdminProperties />} />
+              <Route path="units" element={<AdminUnits />} />
+              <Route path="tenants" element={<AdminTenants />} />
+              <Route path="leases" element={<AdminLeases />} />
+              <Route path="bills" element={<AdminBills />} />
+              <Route path="payments" element={<AdminPayments />} />
+              <Route path="maintenance" element={<AdminMaintenance />} />
+              <Route path="transfers" element={<AdminTransfers />} />
+              <Route path="assistant" element={<AdminAssistant />} />
+              <Route path="notifications" element={<AdminNotifications />} />
+              <Route path="settings" element={<AdminSettings />} />
+            </Route>
 
-          <Route path="/tenant" element={<ProtectedRoute role="tenant"><DashLayout role="tenant" /></ProtectedRoute>}>
-            <Route index element={<TenantOverview />} />
-            <Route path="bills" element={<TenantBills />} />
-            <Route path="maintenance" element={<TenantMaintenance />} />
-            <Route path="transfers" element={<TenantTransfers />} />
-          </Route>
+            <Route path="/tenant" element={<ProtectedRoute role="tenant"><DashLayout role="tenant" /></ProtectedRoute>}>
+              <Route index element={<TenantOverview />} />
+              <Route path="bills" element={<TenantBills />} />
+              <Route path="maintenance" element={<TenantMaintenance />} />
+              <Route path="transfers" element={<TenantTransfers />} />
+            </Route>
 
-          <Route path="/admin/*" element={<Navigate to="/admin" replace />} />
-          <Route path="*" element={<div className="auth-wrap"><h1 className="page-title">Page not found</h1></div>} />
-        </Routes>
+            <Route path="/admin/*" element={<Navigate to="/admin" replace />} />
+            <Route path="*" element={<div className="auth-wrap"><h1 className="page-title">Page not found</h1></div>} />
+          </Routes>
+        </Suspense>
       </main>
       {pathname !== '/login' && <Footer />}
     </>

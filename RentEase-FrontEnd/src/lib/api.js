@@ -23,7 +23,8 @@ export class ApiError extends Error {
 }
 
 /* ---------- axios instance (the React app only ever talks to the LavaLust API) ---------- */
-const http = axios.create({ baseURL: API_URL })
+const http = axios.create({ baseURL: API_URL, timeout: 45000 })
+const REQUEST_TIMEOUT_MS = 45000
 
 http.interceptors.request.use((config) => {
   if (config.auth_required) {
@@ -47,7 +48,18 @@ function refreshTokens() {
 }
 
 async function toError(e) {
-  if (!e.response) return new ApiError('Cannot reach the server. Check your connection and try again.', 0)
+  if (!e.response && ['ECONNABORTED', 'ETIMEDOUT'].includes(e.code)) {
+    return new ApiError(
+      `The API did not respond within ${Math.round(REQUEST_TIMEOUT_MS / 1000)} seconds. It may be waking up or waiting on the database or another service.`,
+      0,
+    )
+  }
+  if (!e.response) {
+    return new ApiError(
+      `Cannot contact the API. Check the deployed VITE_API_URL, API availability, and CORS settings for this website.`,
+      0,
+    )
+  }
   let d = e.response.data
   if (d instanceof Blob) { try { d = JSON.parse(await d.text()) } catch { d = null } }
   return new ApiError(d?.error || `Request failed (${e.response.status})`, e.response.status, d?.errors)
@@ -76,7 +88,7 @@ export async function api(path, opts = {}) {
   return (await send(path, opts)).data
 }
 
-/** Authenticated PDF download: fetches the file as a blob and saves it (the token never goes in the URL). */
+/** Authenticated document download: fetches the file as a blob and saves it (the token never goes in the URL). */
 export async function downloadPdf(path, filename) {
   const res = await send(path, { auth: true, responseType: 'blob' })
   const url = URL.createObjectURL(res.data)

@@ -1,35 +1,39 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
-import { assetUrl } from '../lib/brand'
 import { readableOn, rgbTriplet } from '../lib/color'
+import { useAuth } from './AuthContext'
 
 export const DEFAULT_SETTINGS = {
   site_name: 'RentEase',
   site_tagline: 'Rental billing, made effortless',
   logo_url: '',
   footer_text: 'Built for landlords and tenants of apartments and boarding houses.',
-  accent_color: '#9b5138',
-  header_color: '#40352b',
-  hero_color_from: '#d18a57',
-  hero_color_to: '#627d79',
-  hero_title: 'Rent collection, without the notebook.',
-  hero_subtitle:
-    'Units, tenants, monthly billing, online payments and repair requests — in one calm, centralized place.',
-  hero_cta_text: 'Get started',
+  accent_color: '#E05A47',
+  header_color: '#1E4620',
+  hero_color_from: '#1E4620',
+  hero_color_to: '#4A7450',
+  hero_title: 'Welcome home. Your rent, all in one place.',
+  hero_subtitle: 'Check what is due, download receipts, and follow repair updates from your tenant account.',
+  hero_cta_text: 'Go to my rent',
   hero_image_url: '',
-  login_image_url: '',
-  default_theme: 'system',
-  glass_blur: '18',
-  glass_opacity: '55',
+  default_theme: 'light',
+  glass_blur: '8',
+  glass_opacity: '90',
+  billing_style: 'calendar',
+  billing_due_day: '1',
+  billing_prorate_first_month: '1',
+  billing_grace_period_days: '3',
+  billing_late_fee: '0.00',
 }
 
 const CACHE_KEY = 'rentease-settings'
 
-function readCache() {
-  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(CACHE_KEY) || '{}') } } catch { return DEFAULT_SETTINGS }
+function readCache(ownerId) {
+  if (!ownerId) return DEFAULT_SETTINGS
+  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(`${CACHE_KEY}-${ownerId}`) || '{}') } } catch { return DEFAULT_SETTINGS }
 }
 
-/** Push settings into CSS variables, the tab title and the favicon. */
+/** Apply the signed-in landlord's appearance without changing RentEase branding. */
 export function applySettings(s) {
   const root = document.documentElement.style
   root.setProperty('--accent', s.accent_color)
@@ -44,24 +48,7 @@ export function applySettings(s) {
   root.setProperty('--glass-blur', `${Number(s.glass_blur) || 0}px`)
   root.setProperty('--glass-opacity', String(Number(s.glass_opacity) || 55))
 
-  document.title = s.site_tagline ? `${s.site_name} — ${s.site_tagline}` : s.site_name
-
-  let link = document.querySelector('link[rel="icon"]')
-  if (!link) {
-    link = document.createElement('link')
-    link.rel = 'icon'
-    document.head.appendChild(link)
-  }
-  if (s.logo_url) {
-    link.removeAttribute('type')
-    link.href = assetUrl(s.logo_url)
-  } else {
-    const letter = (s.site_name || 'R').trim().charAt(0).toUpperCase()
-    const svg =
-      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="${s.accent_color}"/>` +
-      `<text x="32" y="44" font-size="36" font-family="Georgia,serif" font-weight="700" text-anchor="middle" fill="${readableOn(s.accent_color)}">${letter.replace(/[<&]/g, '')}</text></svg>`
-    link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`
-  }
+  document.title = 'RentEase — Rental billing, made effortless'
 }
 
 // Apply cached values synchronously on module load -> no flash of default colors.
@@ -70,7 +57,9 @@ applySettings(readCache())
 const Ctx = createContext(null)
 
 export function SettingsProvider({ children }) {
-  const [saved, setSaved] = useState(readCache)
+  const { user } = useAuth()
+  const ownerId = user?.role === 'admin' ? user.id : user?.role === 'tenant' ? user.landlord_id : null
+  const [saved, setSaved] = useState(() => readCache(ownerId))
   const [preview, setPreview] = useState(null) // unsaved draft from the admin form
   const [ready, setReady] = useState(false)
 
@@ -82,17 +71,26 @@ export function SettingsProvider({ children }) {
     const merged = { ...DEFAULT_SETTINGS, ...next }
     setSaved(merged)
     setPreview(null)
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify(merged)) } catch { /* ignore */ }
-  }, [])
+    if (ownerId) {
+      try { localStorage.setItem(`${CACHE_KEY}-${ownerId}`, JSON.stringify(merged)) } catch { /* ignore */ }
+    }
+  }, [ownerId])
 
   useEffect(() => {
     let alive = true
-    api('/api/settings')
+    setSaved(readCache(ownerId))
+    setPreview(null)
+    if (!ownerId) {
+      setReady(true)
+      return () => { alive = false }
+    }
+    setReady(false)
+    api('/api/my/settings', { auth: true })
       .then((r) => alive && commit(r.data))
-      .catch(() => { /* keep cached/default look if the API is asleep */ })
+      .catch(() => { /* Keep this landlord's cached settings if the API is unavailable. */ })
       .finally(() => alive && setReady(true))
     return () => { alive = false }
-  }, [commit])
+  }, [ownerId, commit])
 
   const value = useMemo(
     () => ({ settings: effective, saved, ready, setPreview, commit }),
