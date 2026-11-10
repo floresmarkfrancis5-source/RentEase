@@ -80,10 +80,11 @@ services:
 
   # =========================================================================
   # 2. FrontEnd React App (Vite Static Site)
-  # In Render Blueprint spec: Static Sites use "type: static" (NOT "type: web" with plan)
+  # Note: Static Sites do not use the 'plan' field in Render blueprints.
   # =========================================================================
-  - type: static
+  - type: web
     name: rentease-app
+    runtime: static
     rootDir: RentEase-FrontEnd
     buildCommand: npm install && npm run build
     staticPublishPath: dist
