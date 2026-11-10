@@ -1,0 +1,99 @@
+# Render Blueprint for the complete RentEase project (BackEnd Web Service + FrontEnd Static Site)
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # =========================================================================
+  # 1. BackEnd API (LavaLust PHP / Apache / Docker)
+  # =========================================================================
+  - type: web
+    name: rentease-api
+    runtime: docker
+    plan: free
+    rootDir: RentEase-BackEnd
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        value: RentEaseAPI
+      - key: DB_DRIVER
+        value: mysql
+      - key: DB_CHARSET
+        value: utf8mb4
+      - key: DB_SSL
+        value: "true"
+      - key: DB_CONNECT_TIMEOUT
+        value: "5"
+      # Auto-generated secure tokens (Render creates these automatically!)
+      - key: JWT_SECRET
+        generateValue: true
+      - key: REFRESH_TOKEN_KEY
+        generateValue: true
+      - key: CRON_TOKEN
+        generateValue: true
+      # Aiven database credentials (prompted on Blueprint deploy)
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_SSL_CA_CONTENT
+        sync: false
+      # Cloudinary image storage
+      - key: CLOUDINARY_CLOUD_NAME
+        value: spoiwv0v
+      - key: CLOUDINARY_API_KEY
+        value: "729361533872876"
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      # Optional integrations
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      - key: PAYMONGO_SECRET_KEY
+        sync: false
+      - key: PAYMONGO_WEBHOOK_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      # Cross-origin links
+      - key: CORS_ORIGIN
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+  # =========================================================================
+  # 2. FrontEnd React App (Vite Static Site)
+  # =========================================================================
+  - type: web
+    name: rentease-app
+    runtime: static
+    plan: free
+    rootDir: RentEase-FrontEnd
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false
