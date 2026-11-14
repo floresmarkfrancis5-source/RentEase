@@ -8,12 +8,24 @@ const AssistantPage = lazy(() => import('../pages/admin/Assistant'))
 
 export default function FloatingAssistant({ handoffDraft: providedHandoffDraft, onHandoffChange: onProvidedHandoffChange } = {}) {
   const [open, setOpen] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 899px)').matches)
   const [localHandoffDraft, setLocalHandoffDraft] = useState(null)
   const assistantFabRef = useRef(null)
   const navigate = useNavigate()
   const { t } = useLanguage()
   const handoffDraft = onProvidedHandoffChange ? providedHandoffDraft : localHandoffDraft
   const setHandoffDraft = onProvidedHandoffChange || setLocalHandoffDraft
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 899px)')
+    const updateViewport = () => {
+      setIsMobile(mediaQuery.matches)
+      if (mediaQuery.matches) setOpen(false)
+    }
+    updateViewport()
+    mediaQuery.addEventListener('change', updateViewport)
+    return () => mediaQuery.removeEventListener('change', updateViewport)
+  }, [])
 
   useEffect(() => {
     if (open) return undefined
@@ -47,35 +59,44 @@ export default function FloatingAssistant({ handoffDraft: providedHandoffDraft, 
       <button
         ref={assistantFabRef}
         className={`ai-fab ${open ? 'ai-fab--open' : ''}`}
-        onClick={() => setOpen((current) => !current)}
-        aria-label={t(open ? 'Close assistant' : 'Open assistant')}
+        onClick={() => {
+          if (window.matchMedia('(max-width: 899px)').matches) {
+            setOpen(false)
+            navigate('/admin/assistant')
+            return
+          }
+          setOpen((current) => !current)
+        }}
+        aria-label={t(!isMobile && open ? 'Close assistant' : 'Open assistant')}
         title={t('Assistant')}
       >
-        {open ? (
+        {!isMobile && open ? (
           <svg viewBox="0 0 24 24" aria-hidden><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
         ) : (
           <AssistantAvatar className="assistant-avatar--fab" trackPointer />
         )}
       </button>
 
-      <div className={`ai-panel ${open ? 'ai-panel--open' : ''}`} aria-hidden={!open}>
-        <div className="ai-panel__inner">
-          <div className="ai-panel__body">
-            <Suspense fallback={<LoadingHouse label="Opening RentEaseAssist…" className="loading-house--embedded" />}>
-              <AssistantPage
-                embedded
-                handoffDraft={handoffDraft}
-                onHandoffChange={setHandoffDraft}
-                onClose={() => setOpen(false)}
-                onMaximize={() => {
-                  setOpen(false)
-                  navigate('/admin/assistant')
-                }}
-              />
-            </Suspense>
+      {!isMobile && (
+        <div className={`ai-panel ${open ? 'ai-panel--open' : ''}`} aria-hidden={!open}>
+          <div className="ai-panel__inner">
+            <div className="ai-panel__body">
+              <Suspense fallback={<LoadingHouse label="Opening RentEaseAssist…" className="loading-house--embedded" />}>
+                <AssistantPage
+                  embedded
+                  handoffDraft={handoffDraft}
+                  onHandoffChange={setHandoffDraft}
+                  onClose={() => setOpen(false)}
+                  onMaximize={() => {
+                    setOpen(false)
+                    navigate('/admin/assistant')
+                  }}
+                />
+              </Suspense>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </>
   )
 }
