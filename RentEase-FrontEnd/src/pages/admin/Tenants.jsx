@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import Avatar from '../../components/Avatar'
 import { Field, FormModal, Modal, PageHead, State, StatusPill, Table, clean, useLoad, useToast } from '../../components/ui'
 import { api, dateFmt } from '../../lib/api'
@@ -13,6 +15,133 @@ const FIELDS = [
   { name: 'email',     label: 'Email',     type: 'email', hint: 'Used to log in and to receive bills and receipts.' },
   { name: 'phone',     label: 'Phone',     type: 'tel' },
 ]
+
+function TenantActionMenu({ tenant, onEdit, onMove, onInvite, onReset, onToggle, onDelete }) {
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState(null)
+  const triggerRef = useRef(null)
+  const menuRef = useRef(null)
+  const menuId = `tenant-actions-${tenant.id}`
+
+  useEffect(() => {
+    if (!open) return undefined
+
+    const placeMenu = () => {
+      const trigger = triggerRef.current
+      if (!trigger) return
+      const rect = trigger.getBoundingClientRect()
+      const menuHeight = menuRef.current?.offsetHeight || 240
+      const menuWidth = menuRef.current?.offsetWidth || 208
+      const top = rect.bottom + menuHeight + 8 > window.innerHeight
+        ? Math.max(8, rect.top - menuHeight - 6)
+        : rect.bottom + 6
+      const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, rect.right - menuWidth))
+      setPosition({ top, left })
+    }
+
+    const handleOutside = (event) => {
+      if (!triggerRef.current?.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false)
+    }
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+        return
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+      const items = menuRef.current?.querySelectorAll('[role="menuitem"]')
+      if (!items?.length) return
+      event.preventDefault()
+      const currentIndex = Array.from(items).indexOf(document.activeElement)
+      const nextIndex = event.key === 'Home' ? 0
+        : event.key === 'End' ? items.length - 1
+          : event.key === 'ArrowDown' ? (currentIndex + 1) % items.length
+            : (currentIndex <= 0 ? items.length - 1 : currentIndex - 1)
+      items[nextIndex].focus()
+    }
+
+    placeMenu()
+    document.addEventListener('mousedown', handleOutside)
+    document.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('resize', placeMenu)
+    window.addEventListener('scroll', placeMenu, true)
+    return () => {
+      document.removeEventListener('mousedown', handleOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('resize', placeMenu)
+      window.removeEventListener('scroll', placeMenu, true)
+    }
+  }, [open])
+
+  const items = [
+    { label: 'Edit', onClick: onEdit },
+    tenant.unit_name && tenant.is_active && tenant.lease_status === 'active' && { label: 'Move unit', onClick: onMove },
+    !(tenant.email_verified || tenant.google_linked) && { label: 'Resend invite', onClick: onInvite },
+    { label: 'Reset password', onClick: onReset },
+    { label: tenant.is_active ? 'Deactivate' : 'Reactivate', onClick: onToggle },
+    { label: 'Delete', onClick: onDelete, danger: true },
+  ].filter(Boolean)
+
+  return (
+    <div className="tenant-action-menu">
+      <button
+        ref={triggerRef}
+        id={`${menuId}-trigger`}
+        type="button"
+        className="tenant-action-menu__trigger"
+        aria-label={`More actions for ${tenant.full_name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        title="More actions"
+        onClick={(event) => {
+          setOpen((current) => !current)
+          if (!open && event.detail === 0) {
+            requestAnimationFrame(() => menuRef.current?.querySelector('[role="menuitem"]')?.focus())
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowDown' && !open) {
+            event.preventDefault()
+            setOpen(true)
+            requestAnimationFrame(() => menuRef.current?.querySelector('[role="menuitem"]')?.focus())
+          }
+        }}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+        </svg>
+      </button>
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          id={menuId}
+          className="tenant-action-menu__popover"
+          role="menu"
+          aria-labelledby={`${menuId}-trigger`}
+          style={position ? { top: position.top, left: position.left } : { visibility: 'hidden' }}
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              className={item.danger ? 'tenant-action-menu__item tenant-action-menu__item--danger' : 'tenant-action-menu__item'}
+              onClick={() => {
+                setOpen(false)
+                triggerRef.current?.focus()
+                item.onClick()
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </div>
+  )
+}
 
 function NewTenantForm({ units, onSubmit, onClose }) {
   const { saved: settings } = useSettings()
@@ -237,6 +366,7 @@ function ReassignUnitModal({ tenant, availableUnits, onClose, onDone, flash }) {
 }
 
 export default function Tenants() {
+  const navigate = useNavigate()
   const { data, error, loading, reload } = useLoad('/api/admin/tenants')
   const units = useLoad('/api/admin/units')
   const [edit, setEdit]       = useState(null)
@@ -377,7 +507,7 @@ export default function Tenants() {
 
                 <div className="tenant-card__details">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>🏠</span>
+                    <svg className="tenant-card__detail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5M5 9v12h14V9M9 21v-7h6v7" /></svg>
                     <strong>
                       {t.unit_name ? `${t.unit_name} · ${t.property_name}` : <span className="muted">No assigned unit</span>}
                     </strong>
@@ -385,24 +515,37 @@ export default function Tenants() {
                     {t.lease_status === 'scheduled' && <span className="muted">Move-in {dateFmt(t.lease_start_date)}</span>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>✉️</span><span style={{ wordBreak: 'break-all' }}>{t.email}</span>
+                    <svg className="tenant-card__detail-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg><span style={{ wordBreak: 'break-all' }}>{t.email}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>📞</span><span>{t.phone || 'No phone'}</span>
+                    <svg className="tenant-card__detail-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3H4a1 1 0 0 0-1 1c0 9.4 7.6 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a14 14 0 0 1-8-8l2-2-1-5Z" /></svg><span>{t.phone || 'No phone'}</span>
                   </div>
                 </div>
 
                 <div className="tenant-card__foot">
-                  <button className="btn btn--ghost btn--sm" onClick={() => setEdit(t)}>Edit</button>
-                  {t.unit_name && t.is_active && t.lease_status === 'active' && (
-                    <button className="btn btn--ghost btn--sm" style={{ color: 'var(--accent)' }} onClick={() => setReassign(t)}>Move unit</button>
+                  {t.is_active && (
+                    <button
+                      type="button"
+                      className="tenant-message-button"
+                      aria-label={`Message ${t.full_name}`}
+                      title={`Message ${t.full_name}`}
+                      onClick={() => navigate(`/admin/chats?tenant=${t.id}`)}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5 8.2 8.2 0 0 1-3.2-.65L4 20l1.2-4.1A7.5 7.5 0 1 1 20 11.5Z" />
+                        <path d="M8.5 11.5h7M8.5 14.5h4" />
+                      </svg>
+                    </button>
                   )}
-                  {!(t.email_verified || t.google_linked) && (
-                    <button className="btn btn--accent btn--sm" onClick={() => resendInvite(t)}>Invite</button>
-                  )}
-                  <button className="btn btn--ghost btn--sm" onClick={() => reset(t)}>Reset pass</button>
-                  <button className="btn btn--ghost btn--sm" onClick={() => toggle(t)}>{t.is_active ? 'Deactivate' : 'Reactivate'}</button>
-                  <button className="btn btn--ghost btn--sm" style={{ color: 'var(--red, #ef4444)' }} onClick={() => del(t)}>Delete</button>
+                  <TenantActionMenu
+                    tenant={t}
+                    onEdit={() => setEdit(t)}
+                    onMove={() => setReassign(t)}
+                    onInvite={() => resendInvite(t)}
+                    onReset={() => reset(t)}
+                    onToggle={() => toggle(t)}
+                    onDelete={() => del(t)}
+                  />
                 </div>
               </div>
             ))}
@@ -434,18 +577,31 @@ export default function Tenants() {
               { key: 'is_active', label: 'Account', render: (r) => <StatusPill value={r.is_active ? 'active' : 'ended'} /> },
             ]}
             actions={(r) => (
-              <>
-                <button className="btn btn--ghost btn--sm" onClick={() => setEdit(r)}>Edit</button>
-                {r.unit_name && r.is_active && r.lease_status === 'active' && (
-                  <button className="btn btn--ghost btn--sm" style={{ color: 'var(--accent)' }} onClick={() => setReassign(r)}>Move unit</button>
+              <div className="tenant-row-actions">
+                {r.is_active && (
+                  <button
+                    type="button"
+                    className="tenant-message-button"
+                    aria-label={`Message ${r.full_name}`}
+                    title={`Message ${r.full_name}`}
+                    onClick={() => navigate(`/admin/chats?tenant=${r.id}`)}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5 8.2 8.2 0 0 1-3.2-.65L4 20l1.2-4.1A7.5 7.5 0 1 1 20 11.5Z" />
+                      <path d="M8.5 11.5h7M8.5 14.5h4" />
+                    </svg>
+                  </button>
                 )}
-                {!(r.email_verified || r.google_linked) && (
-                  <button className="btn btn--accent btn--sm" onClick={() => resendInvite(r)}>Resend invite</button>
-                )}
-                <button className="btn btn--ghost btn--sm" onClick={() => reset(r)}>Reset password</button>
-                <button className="btn btn--ghost btn--sm" onClick={() => toggle(r)}>{r.is_active ? 'Deactivate' : 'Reactivate'}</button>
-                <button className="btn btn--ghost btn--sm" onClick={() => del(r)}>Delete</button>
-              </>
+                <TenantActionMenu
+                  tenant={r}
+                  onEdit={() => setEdit(r)}
+                  onMove={() => setReassign(r)}
+                  onInvite={() => resendInvite(r)}
+                  onReset={() => reset(r)}
+                  onToggle={() => toggle(r)}
+                  onDelete={() => del(r)}
+                />
+              </div>
             )} />
         )}
       </State>

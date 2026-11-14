@@ -418,7 +418,7 @@ EOT;
      */
     protected function success($text)
     {
-        echo $this->color("✔ " . $text, 'green') . PHP_EOL;
+        echo $this->color("[OK] " . $text, 'green') . PHP_EOL;
     }
 
     /**
@@ -440,7 +440,7 @@ EOT;
      */
     protected function warning($text)
     {
-        echo $this->color("⚠ " . $text, 'yellow') . PHP_EOL;
+        echo $this->color("[WARNING] " . $text, 'yellow') . PHP_EOL;
     }
 
     /**

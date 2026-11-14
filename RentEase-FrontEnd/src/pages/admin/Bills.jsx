@@ -1,20 +1,49 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { FormModal, Modal, PageHead, State, StatusPill, Table, useLoad, useToast } from '../../components/ui'
+import { useAuth } from '../../context/AuthContext'
+import { useSettings } from '../../context/SettingsContext'
 import { api, dateFmt, downloadPdf, money } from '../../lib/api'
 import ViewToolbar from '../../components/ViewToolbar'
 
-const FILTERS = ['', 'unpaid', 'overdue', 'paid']
-const STATUS_LABELS = { '': 'All', unpaid: 'Unpaid', overdue: 'Overdue', paid: 'Paid' }
+function BillMoreActions({ bill, onRemind, onDownload, onAdjust, onDelete }) {
+  const menuId = `bill-actions-${bill.id}`
+
+  function runAction(event, action) {
+    event.currentTarget.closest('details')?.removeAttribute('open')
+    action(bill)
+  }
+
+  return (
+    <details className="bill-action-menu">
+      <summary aria-label={`More actions for ${bill.tenant_name}`} aria-controls={menuId}>More</summary>
+      <div id={menuId} className="bill-action-menu__items">
+        {bill.status !== 'paid' && <button type="button" onClick={(event) => runAction(event, onRemind)}>Send reminder</button>}
+        <button type="button" onClick={(event) => runAction(event, onDownload)}>Download statement</button>
+        {bill.status !== 'paid' && (
+          <>
+            <button type="button" onClick={(event) => runAction(event, onAdjust)}>Adjust bill</button>
+            <button type="button" className="is-danger" onClick={(event) => runAction(event, onDelete)}>Delete bill</button>
+          </>
+        )}
+      </div>
+    </details>
+  )
+}
 
 export default function Bills() {
+  const { user } = useAuth()
+  const { settings, commit } = useSettings()
+  const [paymentMethods, setPaymentMethods] = useState([])
+  const [savingPaymentMethods, setSavingPaymentMethods] = useState(false)
   const [status, setStatus] = useState('')
   const [month, setMonth] = useState('')
   const { data, error, loading, reload } = useLoad(
-    `/api/admin/bills${buildQuery({ status, month })}`
+    `/api/admin/bills${buildQuery({ month })}`
   )
   const [gen, setGen] = useState(false)
   const [pay, setPay] = useState(null)
   const [detail, setDetail] = useState(null)
+  const [detailVersion, setDetailVersion] = useState(0)
   const [adjust, setAdjust] = useState(null)
   const [viewMode, setViewMode] = useState('grid') // 'grid' | 'list'
   const [search, setSearch] = useState('')
@@ -23,9 +52,41 @@ export default function Bills() {
 
   const rawBills = data || []
 
+  useEffect(() => {
+    setPaymentMethods(String(settings.payment_methods || '').split(',').filter(Boolean))
+  }, [settings.payment_methods])
+
+  const savedPaymentMethods = String(settings.payment_methods || '').split(',').filter(Boolean)
+  const paymentMethodsChanged = paymentMethods.join(',') !== savedPaymentMethods.join(',')
+
+  const savePaymentMethods = async () => {
+    setSavingPaymentMethods(true)
+    try {
+      const r = await api('/api/admin/settings', {
+        method: 'PUT',
+        auth: true,
+        body: { payment_methods: paymentMethods },
+      })
+      commit(r.data)
+      flash(r.message || 'Payment setup saved.')
+    } catch (e) {
+      flash(e.fields?.payment_methods || e.message, 'bad')
+    } finally {
+      setSavingPaymentMethods(false)
+    }
+  }
+
   // Filter & sort
   const filteredBills = useMemo(() => {
     let result = [...rawBills]
+
+    if (status === 'outstanding') {
+      result = result.filter((bill) => bill.status === 'unpaid' || bill.status === 'overdue')
+    } else if (status === 'attention') {
+      result = result.filter(isBillNeedsAttention)
+    } else if (status) {
+      result = result.filter((bill) => bill.status === status)
+    }
 
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -51,15 +112,25 @@ export default function Bills() {
     })
 
     return result
-  }, [rawBills, search, sortBy])
+  }, [rawBills, search, sortBy, status])
 
-  // Summary counts from current filtered data
+  // Totals use every loaded bill for the selected month, independent of status/search filters.
   const stats = rawBills.reduce((acc, b) => {
     acc.total += Number(b.amount)
-    if (b.status === 'paid') acc.collected += Number(b.amount)
-    if (b.status === 'unpaid' || b.status === 'overdue') acc.outstanding += Number(b.amount)
+    if (b.status === 'paid') {
+      acc.collected += Number(b.amount)
+      acc.paidCount += 1
+    }
+    if (b.status === 'unpaid' || b.status === 'overdue') {
+      acc.outstanding += Number(b.amount)
+      acc.outstandingCount += 1
+    }
+    if (b.status === 'overdue') {
+      acc.overdue += Number(b.amount)
+      acc.overdueCount += 1
+    }
     return acc
-  }, { total: 0, collected: 0, outstanding: 0 })
+  }, { total: 0, collected: 0, outstanding: 0, overdue: 0, paidCount: 0, outstandingCount: 0, overdueCount: 0 })
 
   const generate = async (v) => {
     const r = await api('/api/admin/bills/generate', { method: 'POST', auth: true, body: { month: v.month } })
@@ -74,7 +145,7 @@ export default function Bills() {
     })
     flash(r.message)
     reload()
-    if (detail?.id === pay.id) detailReload()
+    if (detail?.id === pay.id) setDetailVersion((version) => version + 1)
   }
 
   const adjustBill = async (v) => {
@@ -106,52 +177,117 @@ export default function Bills() {
     } catch (e) { flash(e.message, 'bad') }
   }
 
-  // For bulk generation — generate for the previous/current/next month at once
-  const bulkGenerate = async () => {
-    if (!window.confirm('Generate bills for ALL active leases this month?')) return
-    try {
-      const r = await api('/api/admin/bills/generate', { method: 'POST', auth: true, body: { month: new Date().toISOString().slice(0, 7) } })
-      flash(r.message)
-      reload()
-    } catch (e) { flash(e.message, 'bad') }
-  }
-
   const unpaidCount = rawBills.filter((b) => b.status === 'unpaid').length
   const overdueCount = rawBills.filter((b) => b.status === 'overdue').length
+  const attentionBills = rawBills.filter(isBillNeedsAttention).sort((a, b) => {
+    if (a.status === 'overdue' && b.status !== 'overdue') return -1
+    if (b.status === 'overdue' && a.status !== 'overdue') return 1
+    return (a.due_date || '').localeCompare(b.due_date || '')
+  })
 
   return (
     <>
       <PageHead eyebrow="Billing" title="Bills" sub="One bill per active lease per month. Generating twice never creates duplicates.">
-        <button className="btn btn--ghost" onClick={bulkGenerate}>Quick generate (this month)</button>
-        <button className="btn btn--accent" onClick={() => setGen(true)}>Generate bills…</button>
+        <button className="btn btn--accent" onClick={() => setGen(true)}>Generate bills</button>
       </PageHead>
-      <p className="alert" style={{ marginTop: 0 }}>Bills are amounts tenants owe for a rental month. Generate bills after leases start; the Payments page shows money actually received and its receipt. A bill is not a payment.</p>
-
-      {/* Summary cards */}
-      {data && data.length > 0 && (
-        <div className="bill-stats">
-          <div className="bill-stat">
-            <span className="bill-stat__label">Total billed</span>
-            <span className="bill-stat__value">{money(stats.total)}</span>
+      <details className="bills-payment-setup">
+        <summary>Tenant payment options <span>Configure which online methods tenants can use</span></summary>
+        <div className="bills-payment-setup__body">
+          <div>
+            <strong>{user?.full_name || 'Landlord'}</strong>
+            <p className="muted">
+              {user?.email || 'No email on profile'}{user?.phone ? ` · ${user.phone}` : ''}
+            </p>
+            <p className="bills-payment-setup__hint">Selected methods are offered at tenant checkout when online payments are available. This setting does not record a payment or determine whether the payment provider is in test or live mode.</p>
           </div>
-          <div className="bill-stat bill-stat--good">
-            <span className="bill-stat__label">Collected</span>
-            <span className="bill-stat__value">{money(stats.collected)}</span>
+          <div className="bills-payment-setup__controls">
+            {[
+              { value: 'gcash', label: 'GCash' },
+              { value: 'paymaya', label: 'Maya' },
+            ].map((method) => (
+              <label key={method.value} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={paymentMethods.includes(method.value)}
+                  onChange={(event) => setPaymentMethods((current) => event.target.checked
+                    ? [...new Set([...current, method.value])]
+                    : current.filter((value) => value !== method.value))}
+                />
+                {method.label}
+              </label>
+            ))}
+            <button
+              type="button"
+              className="btn btn--accent btn--sm"
+              disabled={!paymentMethodsChanged || savingPaymentMethods}
+              onClick={savePaymentMethods}
+            >
+              {savingPaymentMethods ? 'Saving…' : 'Save payment setup'}
+            </button>
           </div>
-          <div className="bill-stat bill-stat--warn">
-            <span className="bill-stat__label">Outstanding</span>
-            <span className="bill-stat__value">{money(stats.outstanding)}</span>
-          </div>
-          {overdueCount > 0 && (
-            <div className="bill-stat bill-stat--bad">
-              <span className="bill-stat__label">Overdue bills</span>
-              <span className="bill-stat__value">{overdueCount}</span>
-            </div>
-          )}
         </div>
+      </details>
+      <p className="bills-explainer">Bills show rent due; the Payments page shows money received and its receipt.</p>
+
+      {data && (
+        <section className="bill-summary" aria-label="Bill totals">
+          <div className="bill-summary__heading">
+            <h2>Bill totals</h2>
+            <span>{month || 'All months'} · {rawBills.length} bills</span>
+          </div>
+          <div className="bill-summary__items">
+            <button type="button" className={`bill-summary__item${status === '' ? ' is-active' : ''}`} onClick={() => { setStatus(''); setSearch('') }} aria-pressed={status === ''}>
+              <span>Total billed</span><strong>{money(stats.total)}</strong><small>{rawBills.length} bills</small>
+            </button>
+            <button type="button" className={`bill-summary__item is-good${status === 'paid' ? ' is-active' : ''}`} onClick={() => { setStatus('paid'); setSearch('') }} aria-pressed={status === 'paid'}>
+              <span>Collected</span><strong>{money(stats.collected)}</strong><small>{stats.paidCount} paid bills</small>
+            </button>
+            <button type="button" className={`bill-summary__item is-warning${status === 'outstanding' ? ' is-active' : ''}`} onClick={() => { setStatus('outstanding'); setSearch('') }} aria-pressed={status === 'outstanding'}>
+              <span>Outstanding</span><strong>{money(stats.outstanding)}</strong><small>{stats.outstandingCount} unpaid bills</small>
+            </button>
+            <button type="button" className={`bill-summary__item is-danger${status === 'overdue' ? ' is-active' : ''}`} onClick={() => { setStatus('overdue'); setSearch('') }} aria-pressed={status === 'overdue'}>
+              <span>Overdue</span><strong>{money(stats.overdue)}</strong><small>{stats.overdueCount} overdue bills</small>
+            </button>
+          </div>
+        </section>
       )}
 
-      {/* ViewToolbar */}
+      {attentionBills.length > 0 && (
+        <section className="bill-attention" aria-labelledby="bill-attention-title">
+          <div className="bill-attention__heading">
+            <div>
+              <h2 id="bill-attention-title">Needs attention</h2>
+              <p>Overdue bills and unpaid bills due within the next 7 days.</p>
+            </div>
+            <span>{attentionBills.length}</span>
+          </div>
+          <ul>
+            {attentionBills.slice(0, 4).map((bill) => (
+              <li key={bill.id}>
+                <div className="bill-attention__tenant">
+                  <strong>{bill.tenant_name}</strong>
+                  <span>{bill.unit_name} · {bill.property_name} · {bill.period_month}</span>
+                </div>
+                <div className="bill-attention__due">
+                  <strong>{money(bill.amount)}</strong>
+                  <span className={bill.status === 'overdue' ? 'is-overdue' : ''}>
+                    {bill.status === 'overdue'
+                      ? `${overdueDays(bill.due_date)}d overdue`
+                      : `Due ${dateFmt(bill.due_date)}`}
+                  </span>
+                </div>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDetail(bill)}>View</button>
+              </li>
+            ))}
+          </ul>
+          {attentionBills.length > 4 && (
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => { setStatus('attention'); setSearch('') }}>
+              View all {attentionBills.length} attention bills
+            </button>
+          )}
+        </section>
+      )}
+
       <ViewToolbar
         view={viewMode}
         onViewChange={setViewMode}
@@ -164,7 +300,9 @@ export default function Bills() {
           { value: '', label: `All Statuses (${rawBills.length})` },
           { value: 'unpaid', label: `Unpaid (${unpaidCount})` },
           { value: 'overdue', label: `Overdue (${overdueCount})` },
-          { value: 'paid', label: 'Paid' },
+          { value: 'outstanding', label: `Outstanding (${stats.outstandingCount})` },
+          { value: 'attention', label: `Needs attention (${attentionBills.length})` },
+          { value: 'paid', label: `Paid (${stats.paidCount})` },
         ]}
         sort={sortBy}
         onSortChange={setSortBy}
@@ -197,50 +335,44 @@ export default function Bills() {
             No bills match your search and filter criteria.
           </div>
         ) : viewMode === 'grid' ? (
-          <div className="cards-grid">
+          <div className="cards-grid bills-cards-grid">
             {filteredBills.map((r) => (
-              <div key={r.id} className="request-card">
+              <article key={r.id} className="request-card bill-card">
                 <div className="request-card__head">
-                  <div>
-                    <h3 className="request-card__title">{r.period_month}</h3>
-                    <div className="request-card__sub">{r.tenant_name} · {r.unit_name} ({r.property_name})</div>
+                  <div className="bill-card__identity">
+                    <h3 className="request-card__title">{r.tenant_name}</h3>
+                    <div className="request-card__sub">{r.unit_name} · {r.property_name}</div>
                   </div>
                   <StatusPill value={r.status} />
                 </div>
 
-                <div style={{ background: 'var(--page-bg)', padding: '12px 14px', borderRadius: 8, border: '1px solid var(--page-line)' }}>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent, #6366f1)' }}>
-                    {money(r.amount)}
-                  </div>
+                <div className="bill-card__summary">
+                  <div className="bill-card__period">{r.period_month}</div>
+                  <strong className="bill-card__amount">{money(r.amount)}</strong>
+                  <span className="bill-card__amount-label">Amount due</span>
                   {Number(r.late_fee_amount) > 0 && (
-                    <small className="muted">
-                      Includes {money(r.late_fee_amount)} late fee
-                    </small>
+                    <small className="muted">Includes {money(r.late_fee_amount)} late fee</small>
                   )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, fontSize: '.84rem' }}>
-                    <span className="muted">Due: {dateFmt(r.due_date)}</span>
+                  <div className="bill-card__due">
+                    <span>Due {dateFmt(r.due_date)}</span>
                     {r.status === 'overdue' && (
-                      <span className="tag tag--danger" style={{ fontSize: '.72rem', padding: '2px 6px' }}>
-                        {overdueDays(r.due_date)}d overdue
-                      </span>
+                      <strong>{overdueDays(r.due_date)}d overdue</strong>
                     )}
                   </div>
                   {r.notes && (
-                    <div style={{ marginTop: 6, fontSize: '.8rem', color: 'var(--page-muted)', fontStyle: 'italic' }}>
-                      {r.notes}
-                    </div>
+                    <details className="bill-card__notes">
+                      <summary>Bill note</summary>
+                      <p>{r.notes}</p>
+                    </details>
                   )}
                 </div>
 
-                <div className="request-card__foot">
-                  <button className="btn btn--ghost btn--sm" onClick={() => setDetail(r)}>View</button>
-                  {r.status !== 'paid' && <button className="btn btn--accent btn--sm" onClick={() => setPay(r)}>Record pay</button>}
-                  {r.status !== 'paid' && <button className="btn btn--ghost btn--sm" onClick={() => remind(r)}>Remind</button>}
-                  <button className="btn btn--ghost btn--sm" onClick={() => pdf(r)}>Download statement</button>
-                  {r.status !== 'paid' && <button className="btn btn--ghost btn--sm" onClick={() => setAdjust(r)}>Adjust</button>}
-                  {r.status !== 'paid' && <button className="btn btn--ghost btn--sm" style={{ color: 'var(--danger)' }} onClick={() => del(r)}>Delete</button>}
+                <div className="request-card__foot bill-card__foot">
+                  <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDetail(r)}>View</button>
+                  {r.status !== 'paid' && <button type="button" className="btn btn--accent btn--sm" onClick={() => setPay(r)}>Record payment</button>}
+                  <BillMoreActions bill={r} onRemind={remind} onDownload={pdf} onAdjust={setAdjust} onDelete={del} />
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         ) : (
@@ -254,7 +386,6 @@ export default function Bills() {
                   <>
                     {money(r.amount)}
                     {Number(r.late_fee_amount) > 0 && <><br /><small className="muted">Includes {money(r.late_fee_amount)} late fee</small></>}
-                    {r.notes && <><br /><small className="muted">{r.notes}</small></>}
                   </>
                 )
               },
@@ -273,14 +404,11 @@ export default function Bills() {
               { key: 'status', label: 'Status', render: (r) => <StatusPill value={r.status} /> },
             ]}
             actions={(r) => (
-              <>
+              <div className="bill-table-actions">
                 <button className="btn btn--ghost btn--sm" onClick={() => setDetail(r)}>View</button>
                 {r.status !== 'paid' && <button className="btn btn--accent btn--sm" onClick={() => setPay(r)}>Record payment</button>}
-                {r.status !== 'paid' && <button className="btn btn--ghost btn--sm" onClick={() => remind(r)}>Remind</button>}
-                <button className="btn btn--ghost btn--sm" onClick={() => pdf(r)}>Download</button>
-                {r.status !== 'paid' && <button className="btn btn--ghost btn--sm" onClick={() => setAdjust(r)}>Adjust</button>}
-                {r.status !== 'paid' && <button className="btn btn--ghost btn--sm" style={{ color: 'var(--danger)' }} onClick={() => del(r)}>Delete</button>}
-              </>
+                <BillMoreActions bill={r} onRemind={remind} onDownload={pdf} onAdjust={setAdjust} onDelete={del} />
+              </div>
             )}
           />
         )}
@@ -340,7 +468,7 @@ export default function Bills() {
         />
       )}
 
-      {detail && <BillDetail bill={detail} onClose={() => setDetail(null)} flash={flash} />}
+      {detail && <BillDetail key={`${detail.id}-${detailVersion}`} bill={detail} onClose={() => setDetail(null)} flash={flash} />}
 
       {toast}
     </>
@@ -405,7 +533,6 @@ function BillDetail({ bill, onClose, flash }) {
 
 function buildQuery(filters) {
   const q = []
-  if (filters.status) q.push(`status=${encodeURIComponent(filters.status)}`)
   if (filters.month) q.push(`month=${encodeURIComponent(filters.month)}`)
   return q.length ? '?' + q.join('&') : ''
 }
@@ -415,4 +542,19 @@ function overdueDays(dueDateStr) {
   const due = new Date(String(dueDateStr).replace(' ', 'T'))
   const diff = Date.now() - due.getTime()
   return Math.max(0, Math.floor(diff / 86400000))
+}
+
+function daysUntilDue(dueDateStr) {
+  const [year, month, day] = String(dueDateStr || '').slice(0, 10).split('-').map(Number)
+  if (!year || !month || !day) return null
+  const today = new Date()
+  const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+  const dueUtc = Date.UTC(year, month - 1, day)
+  return Math.round((dueUtc - todayUtc) / 86400000)
+}
+
+function isBillNeedsAttention(bill) {
+  if (bill.status === 'overdue') return true
+  const days = daysUntilDue(bill.due_date)
+  return bill.status === 'unpaid' && days !== null && days >= 0 && days <= 7
 }

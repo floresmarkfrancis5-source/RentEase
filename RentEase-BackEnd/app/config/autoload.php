@@ -111,6 +111,7 @@ $autoload['configs'] = array(
 	'paymongo',
 	'google_auth',
 	'notifier',
-	'gemini'
+	'gemini',
+	'assistant_public'
 );
 ?>

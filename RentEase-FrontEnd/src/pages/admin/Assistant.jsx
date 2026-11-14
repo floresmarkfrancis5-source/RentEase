@@ -2,50 +2,182 @@ import { useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import Glass from '../../components/Glass'
 import PropertyLocationPicker from '../../components/PropertyLocationPicker'
-import { Field } from '../../components/ui'
+import { Field, Modal } from '../../components/ui'
+import AssistantAvatar from '../../components/AssistantAvatar'
 import { useAuth } from '../../context/AuthContext'
 import { api } from '../../lib/api'
 import ContractTemplateEditor from '../../components/ContractTemplateEditor'
 import { parseLeaseTemplate } from '../../lib/leaseContract'
 
 const today = () => new Date().toISOString().slice(0, 10)
-const INTRO_MESSAGE = 'Hi! Ask me about your properties, vacant units, leases, tenants, unpaid bills, payments, repair requests, or transfer requests. I can also draft contract clauses and house rules for you to review. Changes are never saved until you confirm them.'
+const INTRO_PARAGRAPHS = [
+  'Ask me about your properties, units, tenants, leases, or rent. I can help you find details and understand what is happening across your rentals.',
+  'You can also tell me what you want to set up. I can prepare a property, unit, tenant, or contract draft for you to review.',
+  'Just describe what you need in your own words. I’ll ask if I need more details, and nothing is added or changed until you review and confirm it.',
+]
+const WELCOME_SUGGESTIONS = [
+  'Check my unpaid rent for this month',
+  'List all my tenants',
+  'Draft a new lease agreement',
+]
 const EMPTY_SETUP = { name: '', type: 'apartment', address: '', city: '', unitCount: '1', monthlyRent: '' }
 const formatPeso = (amount) => new Intl.NumberFormat('en-PH', {
   style: 'currency', currency: 'PHP', maximumFractionDigits: 0,
 }).format(amount)
-const normaliseProposal = (proposal) => ({
-  property: {
-    ...(proposal.property || {}),
-    name: String(proposal.property?.name ?? ''),
-    type: ['apartment', 'boarding_house'].includes(proposal.property?.type) ? proposal.property.type : 'apartment',
-    address: String(proposal.property?.address ?? ''),
-    city: String(proposal.property?.city ?? ''),
-    barangay: String(proposal.property?.barangay ?? ''),
-    latitude: proposal.property?.latitude ?? '',
-    longitude: proposal.property?.longitude ?? '',
-    description: String(proposal.property?.description ?? ''),
-  },
-  units: (proposal.units || []).map((unit, index) => ({
-    ...unit,
-    unit_name: String(unit.unit_name || `Unit ${index + 1}`),
-    monthly_rent: unit.monthly_rent ?? '',
-    capacity: Number.isInteger(Number(unit.capacity)) ? Number(unit.capacity) : 1,
-    condition_tag: unit.condition_tag === 'under_maintenance' ? 'under_maintenance' : 'good_condition',
-  })),
-  tenants: (proposal.tenants || []).map((tenant) => ({
-    ...tenant,
-    username: String(tenant.username ?? ''),
-    email: String(tenant.email ?? ''),
-    full_name: String(tenant.full_name ?? ''),
-    phone: String(tenant.phone ?? ''),
-    start_date: tenant.start_date || today(),
-    monthly_rent: tenant.monthly_rent ?? '',
-    deposit: tenant.deposit ?? 0,
-    due_day: tenant.due_day ?? 5,
-    unit_index: Number(tenant.unit_index || 0),
-  })),
-})
+const numberedUnitName = (name) => {
+  const match = String(name || '').trim().match(/^(.*?)\s*#?\s*(\d+)$/)
+  return match ? { prefix: match[1].trim() || 'Unit', number: Number(match[2]) } : null
+}
+const normaliseProposal = (proposal) => {
+  const units = proposal.units || []
+  const namedUnits = units.map((unit) => ({ ...unit, parsedName: numberedUnitName(unit.unit_name) }))
+  const customNumbered = namedUnits.filter((unit) => unit.parsedName
+    && unit.parsedName.prefix.toLowerCase() !== 'unit')
+  const prefix = customNumbered[0]?.parsedName.prefix || 'Unit'
+  let nextNumber = customNumbered.length
+    ? Math.max(...customNumbered.filter((unit) => unit.parsedName.prefix.toLowerCase() === prefix.toLowerCase())
+      .map((unit) => unit.parsedName.number)) + 1
+    : 101
+  const unitNames = namedUnits.map((unit, index) => {
+    const name = String(unit.unit_name || '').trim()
+    const isDefaultNumbered = !name || (unit.parsedName && unit.parsedName.prefix.toLowerCase() === 'unit')
+    if (customNumbered.length && isDefaultNumbered) return `${prefix} ${nextNumber++}`
+    if (!customNumbered.length && isDefaultNumbered) return `Unit ${101 + index}`
+    return name
+  })
+  return {
+    property: {
+      ...(proposal.property || {}),
+      name: String(proposal.property?.name ?? ''),
+      type: ['apartment', 'boarding_house'].includes(proposal.property?.type) ? proposal.property.type : 'apartment',
+      address: String(proposal.property?.address ?? ''),
+      city: String(proposal.property?.city ?? ''),
+      barangay: String(proposal.property?.barangay ?? ''),
+      latitude: proposal.property?.latitude ?? '',
+      longitude: proposal.property?.longitude ?? '',
+      description: String(proposal.property?.description ?? ''),
+    },
+    units: units.map((unit, index) => ({
+      ...unit,
+      unit_name: unitNames[index],
+      monthly_rent: unit.monthly_rent ?? '',
+      capacity: Number.isInteger(Number(unit.capacity)) ? Number(unit.capacity) : 1,
+      condition_tag: unit.condition_tag === 'under_maintenance' ? 'under_maintenance' : 'good_condition',
+    })),
+    tenants: (proposal.tenants || []).map((tenant) => ({
+      ...tenant,
+      username: String(tenant.username ?? ''),
+      email: String(tenant.email ?? ''),
+      full_name: String(tenant.full_name ?? ''),
+      phone: String(tenant.phone ?? ''),
+      start_date: tenant.start_date || today(),
+      monthly_rent: tenant.monthly_rent ?? '',
+      deposit: tenant.deposit ?? 0,
+      due_day: tenant.due_day ?? 5,
+      unit_index: Number(tenant.unit_index || 0),
+    })),
+  }
+}
+const activeReplySuggestions = (messages) => {
+  let suggestions = []
+  let sourceIndex = -1
+  let displayIndex = -1
+  messages.forEach((message, index) => {
+    if (message.role === 'assistant') {
+      displayIndex = index
+      const currentSuggestions = Array.isArray(message.proposal?.suggestions)
+        ? message.proposal.suggestions.filter((suggestion) => typeof suggestion === 'string' && suggestion.trim())
+        : []
+      if (currentSuggestions.length > 0) {
+        suggestions = currentSuggestions
+        sourceIndex = index
+      }
+    } else if (message.role === 'user' && suggestions.some(
+      (suggestion) => suggestion.toLowerCase() === String(message.content || '').trim().toLowerCase(),
+    )) {
+      suggestions = []
+      sourceIndex = -1
+    }
+  })
+  return suggestions.length ? { suggestions, sourceIndex, displayIndex } : null
+}
+const renderAssistantInline = (text, keyPrefix) => {
+  const parts = String(text).split(/(\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`)/g)
+  return parts.map((part, index) => {
+    if ((part.startsWith('**') && part.endsWith('**')) || (part.startsWith('__') && part.endsWith('__'))) {
+      return <strong key={`${keyPrefix}-${index}`}>{part.slice(2, -2)}</strong>
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={`${keyPrefix}-${index}`}>{part.slice(1, -1)}</code>
+    }
+    return part
+  })
+}
+const AssistantMessageContent = ({ content }) => {
+  const lines = String(content || '').split(/\r?\n/)
+  const blocks = []
+  let paragraph = []
+  let list = []
+  let listType = null
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      blocks.push({ type: 'paragraph', lines: paragraph })
+      paragraph = []
+    }
+  }
+  const flushList = () => {
+    if (list.length) {
+      blocks.push({ type: listType, items: list })
+      list = []
+      listType = null
+    }
+  }
+  lines.forEach((line) => {
+    const bullet = line.match(/^\s*[-*•]\s+(.+)$/)
+    const numbered = line.match(/^\s*\d+[.)]\s+(.+)$/)
+    const match = bullet || numbered
+    const nextListType = bullet ? 'ul' : numbered ? 'ol' : null
+    if (match) {
+      flushParagraph()
+      if (listType && listType !== nextListType) flushList()
+      listType = nextListType
+      list.push(match[1])
+      return
+    }
+    flushList()
+    if (line.trim()) paragraph.push(line)
+    else flushParagraph()
+  })
+  flushList()
+  flushParagraph()
+
+  return (
+    <div className="assistant-message__body">
+      {blocks.map((block, blockIndex) => {
+        if (block.type === 'paragraph') {
+          return (
+            <p key={`paragraph-${blockIndex}`}>
+              {block.lines.map((line, lineIndex) => (
+                <span key={`line-${lineIndex}`}>
+                  {lineIndex > 0 && <br />}
+                  {renderAssistantInline(line, `paragraph-${blockIndex}-${lineIndex}`)}
+                </span>
+              ))}
+            </p>
+          )
+        }
+        const List = block.type
+        return (
+          <List key={`${block.type}-${blockIndex}`}>
+            {block.items.map((item, itemIndex) => (
+              <li key={`item-${itemIndex}`}>{renderAssistantInline(item, `list-${blockIndex}-${itemIndex}`)}</li>
+            ))}
+          </List>
+        )
+      })}
+    </div>
+  )
+}
 const draftIssues = (draft) => {
   if (!draft) return []
   const issues = []
@@ -88,7 +220,13 @@ const draftIssues = (draft) => {
   return issues
 }
 
-export default function Assistant({ embedded = false, onExpandedChange, handoffDraft: embeddedHandoff, onHandoffChange: onEmbeddedHandoffChange }) {
+export default function Assistant({
+  embedded = false,
+  handoffDraft: embeddedHandoff,
+  onHandoffChange: onEmbeddedHandoffChange,
+  onClose,
+  onMaximize,
+}) {
   const outletContext = useOutletContext()
   const handoffDraft = embedded ? embeddedHandoff : outletContext?.assistantDraftHandoff
   const onHandoffChange = embedded ? onEmbeddedHandoffChange : outletContext?.setAssistantDraftHandoff
@@ -96,6 +234,7 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
   const [messages, setMessages] = useState([])
   const [conversations, setConversations] = useState([])
   const [conversationId, setConversationId] = useState(null)
+  const [mobileThreadOpen, setMobileThreadOpen] = useState(false)
   const [editingMessageId, setEditingMessageId] = useState(null)
   const [draft, setDraft] = useState(null)
   const [text, setText] = useState('')
@@ -106,7 +245,6 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
   const [guidedOpen, setGuidedOpen] = useState(false)
   const [setup, setSetup] = useState(EMPTY_SETUP)
   const [insight, setInsight] = useState(null)
-  const [insightLoading, setInsightLoading] = useState('')
   const [unitsOpen, setUnitsOpen] = useState(false)
   const [loadingUnitProperties, setLoadingUnitProperties] = useState(false)
   const [unitProperties, setUnitProperties] = useState([])
@@ -118,17 +256,11 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
   const [contractTargetType, setContractTargetType] = useState('property')
   const [contractTargetId, setContractTargetId] = useState('')
   const [contractReview, setContractReview] = useState(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
   const messagesEndRef = useRef(null)
   const handoffDraftRef = useRef(handoffDraft)
   handoffDraftRef.current = handoffDraft
   const issues = draftIssues(draft)
-  const isReviewingProposal = Boolean(draft || unitReview || contractReview)
-  const isSetupOpen = guidedOpen || unitsOpen
-
-  useEffect(() => {
-    onExpandedChange?.(isReviewingProposal || isSetupOpen || Boolean(contractDraft))
-  }, [isReviewingProposal, isSetupOpen, contractDraft, onExpandedChange])
-
   useEffect(() => {
     if (!unitsOpen || !unitForm.propertyId) {
       setExistingUnitNames([])
@@ -153,7 +285,7 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [messages, busy, insight, unitReview, contractDraft, contractReview])
+  }, [messages, busy, insight])
 
   useEffect(() => {
     let cancelled = false
@@ -202,6 +334,7 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
       setContractTargetId('')
     }
     setContractReview(null)
+    setReviewOpen(false)
     const handoff = handoffDraftRef.current
     const activeHandoff = savedDraft && Number(handoff?.conversationId) === Number(conversation.id)
       ? handoff.draft
@@ -246,6 +379,7 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
     setContractTargetType('property')
     setContractTargetId('')
     setContractReview(null)
+    setReviewOpen(false)
     setInsight(null)
     setError('')
     setConversations((items) => [result.data, ...items])
@@ -257,6 +391,7 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
     setError('')
     try {
       await createConversation()
+      setMobileThreadOpen(true)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -296,16 +431,24 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
           ...(editingMessageId !== null ? { edit_message_id: editingMessageId } : {}),
         },
       })
+      const response = result?.data
+      if (!response || typeof response !== 'object'
+        || response.user_message_id == null
+        || response.assistant_message_id == null
+        || typeof response.reply !== 'string') {
+        throw new Error(result?.error || 'The Assistant returned an incomplete response. Your message may have been saved; refresh the conversation before retrying.')
+      }
       const pair = [
-        { id: result.data.user_message_id, role: 'user', content: message },
-        { id: result.data.assistant_message_id, role: 'assistant', content: result.data.reply, proposal: result.data.proposal },
+        { id: response.user_message_id, role: 'user', content: message },
+        { id: response.assistant_message_id, role: 'assistant', content: response.reply, proposal: response.proposal },
       ]
-      setConversationId(result.data.conversation_id)
+      setConversationId(response.conversation_id)
       setMessages((current) => (editedIndex >= 0 ? current.slice(0, editedIndex) : current).concat(pair))
-      if (result.data.proposal?.kind === 'contract_draft') {
-        setContractDraft(result.data.proposal)
+      if (response.proposal?.kind === 'contract_draft') {
+        setContractDraft(response.proposal)
         setContractReview(null)
         setDraft(null)
+        setReviewOpen(false)
         const [propertiesResult, unitsResult] = await Promise.all([
           api('/api/admin/properties', { auth: true }),
           api('/api/admin/units', { auth: true }),
@@ -313,22 +456,27 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
         setContractTargets({ properties: propertiesResult.data || [], units: unitsResult.data || [] })
         setContractTargetType('property')
         setContractTargetId('')
-      } else if (result.data.proposal?.kind === 'database_answer') {
+      } else if (response.proposal?.kind === 'database_answer'
+        || response.proposal?.kind === 'assistant_response') {
         setDraft(null)
+        setReviewOpen(false)
         setContractDraft(null)
         setContractReview(null)
+        setReviewOpen(false)
         setContractTargets({ properties: [], units: [] })
         setContractTargetType('property')
         setContractTargetId('')
-      } else if (result.data.proposal
-        && result.data.proposal.property && Array.isArray(result.data.proposal.units)) {
-        setDraft(normaliseProposal(result.data.proposal))
+      } else if (response.proposal
+        && response.proposal.property && Array.isArray(response.proposal.units)) {
+        setDraft(normaliseProposal(response.proposal))
         setContractDraft(null)
         setContractReview(null)
-      } else if (result.data.proposal == null) {
+        setReviewOpen(false)
+      } else if (response.proposal == null) {
         setDraft(null)
         setContractDraft(null)
         setContractReview(null)
+        setReviewOpen(false)
         setContractTargets({ properties: [], units: [] })
       } else {
         throw new Error('The Assistant returned a draft format this screen cannot review.')
@@ -363,12 +511,40 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
     sendMessage(text)
   }
 
-  function chooseQuestion(prompt) {
-    setText(prompt)
+  async function openProposal(proposal) {
+    if (proposal?.kind === 'contract_draft') {
+      setContractDraft(proposal)
+      setContractReview(null)
+      setContractTargetType('property')
+      setContractTargetId('')
+      setReviewOpen(true)
+      try {
+        const [propertiesResult, unitsResult] = await Promise.all([
+          api('/api/admin/properties', { auth: true }),
+          api('/api/admin/units', { auth: true }),
+        ])
+        setContractTargets({ properties: propertiesResult.data || [], units: unitsResult.data || [] })
+      } catch (err) {
+        setReviewOpen(false)
+        setError(err.message)
+        return
+      }
+    } else if (proposal?.property && Array.isArray(proposal.units)) {
+      setDraft(normaliseProposal(proposal))
+      setContractDraft(null)
+      setContractReview(null)
+      setReviewOpen(true)
+    } else {
+      return
+    }
     setGuidedOpen(false)
     setUnitsOpen(false)
-    setUnitReview(null)
-    setInsight(null)
+    setError('')
+  }
+
+  function requestDraftChange() {
+    setText('I would like to change something in the draft: ')
+    document.getElementById('assistant-message')?.focus()
   }
 
   function startGuidedSetup(event) {
@@ -379,7 +555,7 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
       setError('Enter a property name, street address, 1–100 units, and monthly rent of at least ₱1.')
       return
     }
-    const unitList = Array.from({ length: unitCount }, (_, index) => `Unit ${index + 1}`).join(', ')
+    const unitList = Array.from({ length: unitCount }, (_, index) => `Unit ${101 + index}`).join(', ')
     const message = [
       `Please draft a new ${setup.type === 'boarding_house' ? 'boarding house' : 'apartment'} property.`,
       `Property name: ${setup.name.trim()}.`,
@@ -391,21 +567,6 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
     ].filter(Boolean).join(' ')
     setError('')
     sendMessage(message)
-  }
-
-  async function runInsight(action) {
-    setInsightLoading(action)
-    setError('')
-    try {
-      const result = await api('/api/admin/assistant/insights', {
-        method: 'POST', auth: true, body: { action },
-      })
-      setInsight(result.data)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setInsightLoading('')
-    }
   }
 
   function prepareContractReview(type, id) {
@@ -466,6 +627,7 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
       })
       setContractDraft(null)
       setContractReview(null)
+      setReviewOpen(false)
       if (conversationId) {
         try {
           await api(`/api/admin/assistant/conversations/${conversationId}/confirmation`, {
@@ -557,6 +719,7 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
       setInsight({ action: 'success', message: result.message, property_name: property.name })
       setUnitReview(null)
       setUnitsOpen(false)
+      setReviewOpen(false)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -568,6 +731,7 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
     setEditingMessageId(message.id)
     setText(message.content)
     setDraft(null)
+    setReviewOpen(false)
     setError('')
   }
 
@@ -609,13 +773,18 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
   }
 
   async function selectConversation(id) {
-    if (busy || Number(conversationId) === Number(id)) return
+    if (busy) return
+    if (Number(conversationId) === Number(id)) {
+      setMobileThreadOpen(true)
+      return
+    }
     if ((draft || unitReview || contractDraft || contractReview)
       && !window.confirm('Open another conversation? Unsaved review changes will be lost.')) return
     setBusy(true)
     setError('')
     try {
       await loadConversation(id)
+      setMobileThreadOpen(true)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -638,10 +807,20 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
   function addUnit() {
     setDraft((current) => {
       if (!current || current.units.length >= 100) return current
+      const numberedNames = current.units.map((unit) => numberedUnitName(unit.unit_name)).filter(Boolean)
+      const prefix = numberedNames.find((item) => item.prefix.toLowerCase() !== 'unit')?.prefix
+        || numberedNames[0]?.prefix
+        || 'Unit'
+      const matchingNumbers = numberedNames
+        .filter((item) => item.prefix.toLowerCase() === prefix.toLowerCase())
+        .map((item) => item.number)
+      let nextNumber = matchingNumbers.length ? Math.max(...matchingNumbers) + 1 : 101
+      const usedNames = new Set(current.units.map((unit) => String(unit.unit_name).trim().toLowerCase()))
+      while (usedNames.has(`${prefix} ${nextNumber}`.toLowerCase())) nextNumber += 1
       return {
         ...current,
         units: [...current.units, {
-          unit_name: `Unit ${current.units.length + 1}`,
+          unit_name: `${prefix} ${nextNumber}`,
           monthly_rent: current.units[0]?.monthly_rent ?? '',
           capacity: 1,
           condition_tag: 'good_condition',
@@ -678,6 +857,7 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
       updateUser({ onboarding_completed: true })
       setCredentials(result.tenant_credentials || [])
       setDraft(null)
+      setReviewOpen(false)
       try {
         await api(`/api/admin/assistant/conversations/${conversationId}/confirmation`, {
           method: 'POST', auth: true, body: { message: result.message },
@@ -695,9 +875,21 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
     }
   }
 
+  function chooseReplySuggestion(suggestion) {
+    const active = activeReplySuggestions(messages)
+    if (active) {
+      setMessages((current) => current.map((message, index) => index === active.sourceIndex
+        ? { ...message, proposal: { ...message.proposal, suggestions: [] } }
+        : message))
+    }
+    sendMessage(suggestion)
+  }
+
+  const replySuggestions = activeReplySuggestions(messages)
+
   return (
-    <section className={`assistant-page${embedded ? ' assistant-page--embedded' : ''}${draft && embedded ? ' assistant-page--has-draft' : ''}${isReviewingProposal ? ' assistant-page--reviewing' : ''}${isSetupOpen ? ' assistant-page--setup-open' : ''}`}>
-      <div className="assistant-workspace">
+    <section className={`assistant-page${embedded ? ' assistant-page--embedded' : ''}`}>
+      <div className={`assistant-workspace${mobileThreadOpen ? ' assistant-workspace--mobile-thread' : ''}`}>
         <Glass className="assistant-history">
           <div className="assistant-history__head">
             <h2>Chats</h2>
@@ -724,19 +916,42 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
 
         <Glass className="assistant-chat">
           {embedded ? (
-            <div className="assistant-chat__topline">
-              <span>RentEaseAssist</span>
-              <button type="button" disabled={busy || loadingConversations} onClick={startNewConversation}>New chat</button>
+            <div className="assistant-chat__header assistant-chat__header--embedded">
+              <AssistantAvatar />
+              <div className="assistant-chat__identity">
+                <h2>RentEaseAssist</h2>
+                <p>Property setup, account insights, and contract drafts — with you in control.</p>
+              </div>
+              <div className="assistant-chat__header-actions">
+                <button type="button" className="assistant-chat__header-button" disabled={busy || loadingConversations}
+                  onClick={startNewConversation}>New chat</button>
+                <button type="button" className="assistant-chat__header-icon" onClick={onMaximize}
+                  aria-label="Open full Assistant dashboard" title="Open full Assistant dashboard">
+                  <svg viewBox="0 0 24 24" aria-hidden><path d="M14 4h6v6M20 4l-8 8M10 20H4v-6M4 20l8-8" /></svg>
+                </button>
+                <button type="button" className="assistant-chat__header-icon" onClick={onClose}
+                  aria-label="Close assistant" title="Close assistant">
+                  <svg viewBox="0 0 24 24" aria-hidden><path d="m18 6-12 12M6 6l12 12" /></svg>
+                </button>
+              </div>
             </div>
           ) : (
             <div className="assistant-chat__header">
+              <button type="button" className="assistant-chat__back"
+                onClick={() => setMobileThreadOpen(false)} aria-label="Back to conversations"
+                title="Back to conversations">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+              </button>
+              <AssistantAvatar />
               <div className="assistant-chat__identity">
                 <h2>RentEaseAssist</h2>
+                <p>Property setup, account insights, and contract drafts — with you in control.</p>
               </div>
             </div>
           )}
+          {embedded && error && <p className="alert alert--error assistant-chat__error" role="alert">{error}</p>}
           {!draft && (
-            <div className={`assistant-guided${guidedOpen || unitsOpen ? ' assistant-guided--open' : ''}`}>
+            <div className="assistant-guided">
               <div className="assistant-setup-actions" aria-label="Property setup actions">
                 <span>Property setup</span>
                 <button type="button" aria-expanded={guidedOpen} onClick={() => {
@@ -759,7 +974,10 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
                 }}>Add units</button>
               </div>
               {guidedOpen && (
-                <form className="assistant-guided__form" onSubmit={startGuidedSetup}>
+                <Modal title="Set up a property" onClose={() => setGuidedOpen(false)} className="assistant-review-modal">
+                  {error && !reviewOpen && !guidedOpen && !unitsOpen
+                    && <p className="alert alert--error" role="alert">{error}</p>}
+                  <form className="assistant-guided__form" onSubmit={startGuidedSetup}>
                   <div className="assistant-guided__grid">
                     <Field label="Property name">
                       <input value={setup.name} maxLength={120} required placeholder="e.g. Sampaguita Apartments"
@@ -803,10 +1021,13 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
                     <p>You can adjust unit names, rent, and condition before saving.</p>
                     <button className="btn btn--accent" disabled={busy || loadingConversations}>Create draft</button>
                   </div>
-                </form>
+                  </form>
+                </Modal>
               )}
               {unitsOpen && (
-                <form className="assistant-guided__form" onSubmit={prepareUnits}>
+                <Modal title="Add units" onClose={() => setUnitsOpen(false)} className="assistant-review-modal">
+                  {!embedded && error && <p className="alert alert--error" role="alert">{error}</p>}
+                  <form className="assistant-guided__form" onSubmit={prepareUnits}>
                   {loadingUnitProperties ? <p className="muted" role="status">Loading your properties…</p>
                     : !unitProperties.length ? <p className="muted">Add a property before creating units.</p> : <>
                     <div className="assistant-guided__grid">
@@ -856,17 +1077,57 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
                         }}>{busy ? 'Adding…' : 'Confirm and add units'}</button>
                     </>}
                   </>}
-                </form>
+                  </form>
+                </Modal>
               )}
             </div>
           )}
           <div className="assistant-chat__messages" aria-live="polite">
-            {(messages.length ? messages : [{ id: 'intro', role: 'assistant', content: INTRO_MESSAGE }]).map((message) => (
+            {!loadingConversations && !messages.length && !guidedOpen && !unitsOpen ? (
+              <section className="assistant-welcome">
+                <AssistantAvatar className="assistant-avatar--welcome" />
+                <div className="assistant-welcome__copy">
+                  <span className="assistant-welcome__eyebrow">Your rental operations assistant</span>
+                  <h3>Welcome. <span>Let’s make rental management easier.</span></h3>
+                  {INTRO_PARAGRAPHS.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                  <span className="assistant-welcome__suggestions-label">Try asking</span>
+                  <div className="assistant-welcome__suggestions assistant-message__suggestions" aria-label="Suggested questions">
+                    {WELCOME_SUGGESTIONS.map((suggestion) => (
+                      <button key={suggestion} type="button" className="assistant-suggestion"
+                        disabled={busy || loadingConversations} onClick={() => sendMessage(suggestion)}>{suggestion}</button>
+                    ))}
+                  </div>
+                </div>
+                {!loadingConversations && <p className="assistant-welcome__privacy">For your privacy, never share passwords or other sensitive personal or financial information. RentEaseAssist can make mistakes; please verify important information.</p>}
+              </section>
+            ) : messages.map((message, messageIndex) => (
               <div key={message.id} className={`assistant-message-row assistant-message-row--${message.role}`}>
                 {message.role === 'assistant' && <strong className="assistant-message__author">RentEaseAssist</strong>}
                 <div className={`assistant-message assistant-message--${message.role}`}>
-                  <p>{message.content}</p>
+                  {message.role === 'assistant'
+                    ? <AssistantMessageContent content={message.content} />
+                    : <p>{message.content}</p>}
                 </div>
+                {message.role === 'assistant' && message.proposal
+                  && (message.proposal.kind === 'contract_draft'
+                    || (message.proposal.property && Array.isArray(message.proposal.units))) && (
+                  <div className="assistant-message__suggestions" aria-label="Draft actions">
+                    <button type="button" className="assistant-suggestion"
+                      onClick={() => openProposal(message.proposal)}>
+                      {message.proposal.kind === 'contract_draft' ? 'Review contract draft' : 'Show me the draft'}
+                    </button>
+                    <button type="button" className="assistant-suggestion assistant-suggestion--quiet"
+                      onClick={requestDraftChange}>I’d like to change something</button>
+                  </div>
+                )}
+                {message.role === 'assistant' && replySuggestions?.displayIndex === messageIndex && (
+                  <div className="assistant-message__suggestions" aria-label="Suggested replies">
+                    {replySuggestions.suggestions.map((suggestion, index) => (
+                      <button key={`${suggestion}-${index}`} type="button" className="assistant-suggestion"
+                        disabled={busy} onClick={() => chooseReplySuggestion(suggestion)}>{suggestion}</button>
+                    ))}
+                  </div>
+                )}
                 <div className="assistant-message__actions">
                   <button className="btn btn--ghost" type="button" onClick={() => copyMessage(message.content)}>Copy</button>
                   {message.role === 'user' && (
@@ -875,8 +1136,12 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
                 </div>
               </div>
             ))}
-            {busy && <p className="muted">Thinking…</p>}
-            {insightLoading && <p className="muted" role="status">Checking your RentEase records…</p>}
+            {busy && (
+              <div className="assistant-thinking" role="status" aria-label="Assistant is thinking">
+                <AssistantAvatar className="assistant-avatar--thinking" thinking />
+                <span className="assistant-thinking__label">RentEaseAssist is thinking</span>
+              </div>
+            )}
             {insight && (
               <section className="assistant-insight" aria-live="polite">
                 <div className="assistant-insight__head">
@@ -909,26 +1174,6 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
             )}
             <div ref={messagesEndRef} />
           </div>
-          {!messages.length && !busy && (
-            <div className="assistant-chat__suggestions" aria-label="Quick property prompts">
-              <span>Start with a quick example</span>
-              <button type="button" onClick={() => setText('Add an apartment in [city] with [number of units] units, each renting for [monthly rent].')}>Apartment</button>
-              <button type="button" onClick={() => setText('Add a boarding house in [city] with [number of rooms] rooms, each renting for [monthly rent].')}>Boarding house</button>
-            </div>
-          )}
-          {!draft && (
-            <div className="assistant-shortcuts" aria-label="Assistant quick questions">
-              <div className="assistant-quick-actions">
-                <button type="button" onClick={() => chooseQuestion('How many vacant units do I have? List them by property.')}>Vacant units</button>
-                <button type="button" onClick={() => chooseQuestion('Who has unpaid or overdue bills? List the tenant, unit, amount, and due date.')}>Unpaid bills</button>
-                <button type="button" onClick={() => chooseQuestion('Where are all my properties located?')}>Property locations</button>
-                <button type="button" disabled={Boolean(insightLoading)} onClick={() => runInsight('overdue')}>Overdue rent</button>
-                <button type="button" disabled={Boolean(insightLoading)} onClick={() => runInsight('income')}>Income estimate</button>
-                <button type="button" disabled={Boolean(insightLoading)} onClick={() => runInsight('repairs')}>Repair summary</button>
-                <button type="button" onClick={() => chooseQuestion('List pending transfer and early move-in requests.')}>Move-in requests</button>
-              </div>
-            </div>
-          )}
           <form className="assistant-chat__input" onSubmit={send}>
             <textarea id="assistant-message" rows={2} maxLength={4000} value={text} disabled={busy || loadingConversations}
               aria-label={editingMessageId === null ? 'Message for Assistant' : 'Edit your message'}
@@ -939,18 +1184,24 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
               <button className="btn btn--accent" disabled={busy || loadingConversations || !text.trim()}>{busy ? 'Sending…' : editingMessageId === null ? 'Send' : 'Save and retry'}</button>
             </div>
           </form>
-          <p className="assistant-chat__notice">For your safety, do not include passwords, payment details, bank or card information, or other private information. Share only the details needed for your rental setup.</p>
+          <p className="assistant-chat__notice">For your privacy, never share passwords or other sensitive personal or financial information. RentEaseAssist can make mistakes; please verify important information.</p>
         </Glass>
       </div>
 
       {error && <p className="alert alert--error" role="alert">{error}</p>}
 
-      {contractDraft && !contractReview && (
+      {reviewOpen && contractDraft && !contractReview && (
+        <Modal title="Contract customization" onClose={() => setReviewOpen(false)} className="assistant-review-modal">
+        {error && <p className="alert alert--error" role="alert">{error}</p>}
         <Glass className="assistant-draft">
           <div className="assistant-draft__head">
-            <div><p className="eyebrow">AI draft · review before saving</p><h2>Contract customization</h2></div>
+            <div><p className="eyebrow">AI draft · review before saving</p></div>
             <button className="btn btn--ghost" type="button" disabled={busy}
-              onClick={() => { setContractDraft(null); setContractReview(null) }}>Discard draft</button>
+              onClick={() => { setContractDraft(null); setContractReview(null); setReviewOpen(false) }}>Discard draft</button>
+          </div>
+          <div className="assistant-draft__notice" role="status">
+            <strong>Suggested text only — your contract is unchanged.</strong>
+            <span>Choose a target and review the complete template before saving.</span>
           </div>
           <p>{contractDraft.reply || 'Review these suggested additions. Nothing is saved until you confirm.'}</p>
           {!!contractDraft.clauses?.length && (
@@ -1020,15 +1271,22 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
             </>
           )}
         </Glass>
+        </Modal>
       )}
 
-      {contractReview && (
+      {reviewOpen && contractReview && (
+        <Modal title="Final contract review" onClose={() => setReviewOpen(false)} className="assistant-review-modal">
+        {error && <p className="alert alert--error" role="alert">{error}</p>}
         <Glass className="assistant-draft">
           <div className="assistant-draft__head">
             <div><p className="eyebrow">Final review</p><h2>{contractReview.targetName}</h2></div>
             <button className="btn btn--ghost" type="button" disabled={busy} onClick={() => setContractReview(null)}>Back to draft</button>
           </div>
-          <p>Review and edit the full template. Saving changes the default contract for future lease offers; existing leases are not changed.</p>
+          <div className="assistant-draft__notice" role="status">
+            <strong>Final review — not saved yet.</strong>
+            <span>Saving updates the default template for future lease offers; existing leases are not changed.</span>
+          </div>
+          <p>Review and edit the full template below before confirming the save.</p>
           <ContractTemplateEditor
             key={contractReview.key}
             value={contractReview.template}
@@ -1039,13 +1297,26 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
             {busy ? 'Saving…' : 'Confirm and save contract template'}
           </button>
         </Glass>
+        </Modal>
       )}
 
-      {draft && (
+      {reviewOpen && draft && (
+        <Modal title="Proposed rental setup" onClose={() => setReviewOpen(false)} className="assistant-review-modal">
+        {error && <p className="alert alert--error" role="alert">{error}</p>}
         <Glass className="assistant-draft">
           <div className="assistant-draft__head">
-            <div><p className="eyebrow">Review before saving</p><h2>Proposed rental setup</h2></div>
-            <button className="btn btn--ghost" disabled={busy} onClick={() => setDraft(null)}>Discard draft</button>
+            <div><p className="eyebrow">Review before saving</p></div>
+            <button className="btn btn--ghost" disabled={busy} onClick={() => { setDraft(null); setReviewOpen(false) }}>Discard draft</button>
+          </div>
+          <div className="assistant-draft__notice" role="status">
+            <strong>Review only — nothing has been created.</strong>
+            <span>Check every property, unit, rent, and tenant detail before confirming below.</span>
+          </div>
+          <div className="assistant-draft__summary" aria-label="Rental setup summary">
+            <div><span>Property</span><strong>{draft.property.name || 'Unnamed property'}</strong></div>
+            <div><span>Units</span><strong>{draft.units.length}</strong></div>
+            <div><span>Estimated monthly rent</span><strong>{formatPeso(draft.units.reduce((total, unit) => total + (Number(unit.monthly_rent) || 0), 0))}</strong></div>
+            {draft.tenants.length > 0 && <div><span>Tenant leases</span><strong>{draft.tenants.length}</strong></div>}
           </div>
           <div className="stack">
             <h3 className="assistant-draft__section-title">Property details</h3>
@@ -1101,17 +1372,19 @@ export default function Assistant({ embedded = false, onExpandedChange, handoffD
             <button className="btn btn--accent" disabled={busy || issues.length > 0} onClick={confirm}>Confirm and create</button>
           </div>
         </Glass>
+        </Modal>
       )}
 
       {!!credentials.length && (
+        <Modal title="Tenant temporary passwords" onClose={() => setCredentials([])} className="assistant-review-modal">
         <Glass className="assistant-draft">
-          <h2>Tenant temporary passwords</h2>
           <p>Copy these now and share them privately. They are shown only once.</p>
           {credentials.map((credential) => <p className="assistant-credential" key={credential.email}>
             <strong>{credential.full_name || credential.username}</strong> · {credential.username} · {credential.email} · <code>{credential.temporary_password}</code>
           </p>)}
           <button className="btn btn--ghost" onClick={() => navigator.clipboard?.writeText(credentials.map((c) => `${c.username} ${c.email} ${c.temporary_password}`).join('\n'))}>Copy credentials</button>
         </Glass>
+        </Modal>
       )}
     </section>
   )

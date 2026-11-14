@@ -66,10 +66,10 @@ export function AuthImage({ id, imageUrl, alt = '', className = '', style = {}, 
     return (
       <div
         className={`repair-thumb-fallback ${className}`}
-        style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: 'var(--page-raised)', fontSize: '1.1rem', ...style }}
+        style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: 'var(--page-raised)', ...style }}
         title="Image unavailable"
       >
-        📷
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v11H3V8a1 1 0 0 1 1-1Z" /><circle cx="12" cy="13" r="3.5" /></svg>
       </div>
     )
   }
@@ -164,10 +164,13 @@ export function PhotoLightbox({ image, onClose }) {
                 className="btn btn--ghost btn--sm"
                 style={{ color: '#e2e8f0' }}
               >
-                ⬇ Download
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 19h16" /></svg>
+                <span>Download</span>
               </a>
             )}
-            <button type="button" className="modal__close" onClick={onClose} aria-label="Close">✕</button>
+            <button type="button" className="modal__close" onClick={onClose} aria-label="Close">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+            </button>
           </div>
         </div>
 
@@ -181,7 +184,7 @@ export function PhotoLightbox({ image, onClose }) {
                 aria-label="Previous photo"
                 style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', zIndex: 10, background: 'rgba(0,0,0,0.5)', color: '#fff', borderRadius: '999px', width: '36px', height: '36px', padding: 0 }}
               >
-                ◀
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
               </button>
               <button
                 type="button"
@@ -190,7 +193,7 @@ export function PhotoLightbox({ image, onClose }) {
                 aria-label="Next photo"
                 style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', zIndex: 10, background: 'rgba(0,0,0,0.5)', color: '#fff', borderRadius: '999px', width: '36px', height: '36px', padding: 0 }}
               >
-                ▶
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
               </button>
             </>
           )}
@@ -259,6 +262,27 @@ export function RepairPhotoThumbnails({ images, onSelectImage, maxPreview = 3 })
         </button>
       )}
     </div>
+  )
+}
+
+export function RepairFeaturedPhoto({ images, onSelectImage }) {
+  const photo = images?.find((image) => image.uploader_role !== 'landlord')
+  if (!photo) return null
+
+  return (
+    <button
+      type="button"
+      className="repair-featured-photo"
+      onClick={() => {
+        const url = photo.image_url || blobCache.get(photo.id) || null
+        onSelectImage({ ...photo, url, allImages: images })
+      }}
+      aria-label={`View tenant-reported photo: ${photo.file_name || 'Repair photo'}`}
+    >
+      <AuthImage id={photo.id} imageUrl={photo.image_url} alt={photo.file_name || 'Tenant-reported repair photo'} />
+      <span className="repair-featured-photo__label">Tenant-reported photo</span>
+      {images.length > 1 && <span className="repair-featured-photo__count">{images.length} photos</span>}
+    </button>
   )
 }
 

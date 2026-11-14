@@ -122,7 +122,7 @@ export default function GoogleButton({ label = 'Continue with Google', onCredent
           </button>
         )}
       </div>
-      {busy && <p className="google-btn__hint" style={{ color: 'var(--clr-accent)' }}>Signing in with Google…</p>}
+      {busy && <p className="google-btn__hint" role="status">Signing in with Google…</p>}
       {error && <p className="alert alert--error" role="alert" style={{ marginTop: 8 }}>{error}</p>}
     </div>
   )

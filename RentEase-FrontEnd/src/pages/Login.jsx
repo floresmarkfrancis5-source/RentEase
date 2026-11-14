@@ -74,7 +74,10 @@ export default function Login() {
           <GoogleButton label="Sign in with Google" onCredential={handleGoogle} />
 
           <p className="login-note">{t('Tenant accounts are created by your landlord. Ask them for your username and temporary password.')}</p>
-          <p className="login-note">{t('New landlord?')} <a href="/register">{t('Create a landlord account')}</a>.</p>
+          <div className="login-register">
+            <p className="login-note">{t('New landlord?')}</p>
+            <Link className="btn btn-block login-register__button" to="/register">{t('Create a landlord account')}</Link>
+          </div>
         </form>
       </div>
     </section>

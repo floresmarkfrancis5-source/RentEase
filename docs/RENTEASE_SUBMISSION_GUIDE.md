@@ -20,23 +20,31 @@ the `auth` middleware (plus `admin` / `tenant` role middleware).
 2. Copy `Host`, `Port`, `User` (avnadmin), `Password`, `Database name` (defaultdb) and download `ca.pem`.
 3. *Allowed IP addresses* → `0.0.0.0/0` so Render can connect.
 
-## Step 2 – Create the tables in Aiven (pick ONE)
-**A. Migrations from your PC (recommended).** In the BackEnd `.env` temporarily set
+## Step 2 – Initialize Aiven with the current schema
+Use the LavaLust migrations; they are the authoritative schema for this version (000–038). The root-level
+`database/schema.sql` is an older snapshot through migration 032 and is not a valid setup path for the current app.
+From the `RentEase-BackEnd` directory, temporarily point `.env` at Aiven and set:
 ```
 DB_HOST=<aiven host>  DB_PORT=<aiven port>  DB_USER=avnadmin  DB_PASSWORD=<password>
 DB_NAME=defaultdb     DB_SSL=true           DB_SSL_CA=C:/path/to/ca.pem
 MIGRATION_ENABLED=true
+SUPERADMIN_BOOTSTRAP_EMAIL=<your private admin email>
+SUPERADMIN_BOOTSTRAP_USERNAME=<your private admin username>
+SUPERADMIN_BOOTSTRAP_FULL_NAME=<your name>
+SUPERADMIN_BOOTSTRAP_PASSWORD=<private 12+ character password with letters and numbers>
 ```
-then `composer install` and `php lava migration run`. Restore `.env` to your local DB afterwards.
+Replace every placeholder with private values; do not commit `.env`. Run `composer install`, then
+`php lava migration run` and `php lava migration status`. Confirm migrations 000–038 show `APPLIED`
+before deploying the API. Migration 018 intentionally stops if the bootstrap values are missing or invalid.
+After the migrations succeed, remove `SUPERADMIN_BOOTSTRAP_PASSWORD` and restore your local database settings.
+Render does not run migrations automatically; keep `MIGRATION_ENABLED` unset on the deployed web service.
 
-**B. Manual SQL:** run `database/schema.sql` in Aiven's query tool / Workbench / DBeaver.
+The migration creates the initial platform superadmin. For a clean deployment, create landlord accounts through
+the app after it is live. The root-level `database/seed.sql` is optional demo data only; it creates known demo
+accounts and must not be run against a public deployment.
 
-**First landlord account:** run `database/seed.sql` for demo data (landlord `admin@rentease.test` / `Admin@12345`,
-tenant `juan@rentease.test` / `Tenant@12345`) – **log in and change those passwords, or delete the demo users**.
-For a clean start insert your own admin (see the BackEnd README, “First real admin”).
-
-📸 **Screenshot:** Aiven showing the tables (`users, properties, units, leases, bills, payments, maintenance_requests,
-notifications_log, site_settings…`) and `SELECT * FROM users;` from `database/useful_queries.sql`.
+**Screenshot:** Show the Aiven tables and a query such as
+`SELECT id, username, email, role FROM users ORDER BY id;` to verify the bootstrap superadmin.
 
 ## Step 3 – Two GitHub repositories
 | Folder | GitHub repo |

@@ -5,22 +5,11 @@ import { DEFAULT_SETTINGS, useSettings } from '../context/SettingsContext'
 import { api } from '../lib/api'
 import { assetUrl } from '../lib/brand'
 import { compressImage } from '../lib/image'
+import { COLOR_KEYS, COLOR_PRESETS } from '../lib/colorPresets'
+import AnnouncementSettings from '../components/AnnouncementSettings'
 
 const HEX = /^#[0-9a-fA-F]{6}$/
-const COLOR_KEYS = ['accent_color', 'header_color', 'hero_color_from', 'hero_color_to']
-const APPEARANCE_SETTING_KEYS = Object.keys(DEFAULT_SETTINGS).filter((key) => !key.startsWith('billing_'))
-
-const PRESETS = [
-  { name: 'Modern Barangay', accent_color: '#E05A47', header_color: '#1E4620', hero_color_from: '#1E4620', hero_color_to: '#4A7450' },
-  { name: 'Red Clay', accent_color: '#C9655D', header_color: '#482C2A', hero_color_from: '#8F413B', hero_color_to: '#BE6F60' },
-  { name: 'Warm Orange', accent_color: '#D0703D', header_color: '#4F3628', hero_color_from: '#A35632', hero_color_to: '#C77B44' },
-  { name: 'Soft Marigold', accent_color: '#B18A2E', header_color: '#463A1F', hero_color_from: '#86702E', hero_color_to: '#B39445' },
-  { name: 'Garden Green', accent_color: '#66886A', header_color: '#293F2C', hero_color_from: '#365B3A', hero_color_to: '#6E8F70' },
-  { name: 'Quiet Blue', accent_color: '#5B7D92', header_color: '#293F50', hero_color_from: '#3D6177', hero_color_to: '#7291A0' },
-  { name: 'Soft Indigo', accent_color: '#707BA8', header_color: '#34374F', hero_color_from: '#4A537F', hero_color_to: '#8089AE' },
-  { name: 'Muted Violet', accent_color: '#8B739D', header_color: '#403649', hero_color_from: '#65527B', hero_color_to: '#9583A6' },
-  { name: 'Dusty Pink', accent_color: '#B36E83', header_color: '#49303A', hero_color_from: '#885469', hero_color_to: '#B67A8A' },
-]
+const APPEARANCE_SETTING_KEYS = Object.keys(DEFAULT_SETTINGS).filter((key) => !key.startsWith('billing_') && key !== 'payment_methods')
 
 function ColorField({ label, hint, value, onChange, error }) {
   return (
@@ -236,7 +225,7 @@ function SettingsForm() {
           <Glass as="fieldset" className="panel">
             <legend>Colors</legend>
             <div className="presets" role="group" aria-label="Color presets">
-              {PRESETS.map((p) => (
+              {COLOR_PRESETS.map((p) => (
                 <button
                   type="button"
                   key={p.name}
@@ -251,6 +240,7 @@ function SettingsForm() {
                 </button>
               ))}
             </div>
+            <p className="field__hint">Presets use lighter colors in light mode and their original colors in dark mode. Custom colors stay the same in both modes.</p>
             <div className="two">
               <ColorField label="Accent color" hint="Buttons, links and highlights." value={draft.accent_color} onChange={(v) => set('accent_color', v)} error={errors.accent_color} />
               <ColorField label="Header color" hint="The header bar (it turns transparent over the homepage photo)." value={draft.header_color} onChange={(v) => set('header_color', v)} error={errors.header_color} />
@@ -340,6 +330,8 @@ function SettingsForm() {
           </p>
         </aside>
       </div>
+
+      <AnnouncementSettings />
 
       <Glass className="savebar" role="region" aria-label="Save changes">
         <span className={`savebar__state${notice ? ` savebar__state--${notice.type}` : ''}`} role="status" aria-live="polite">

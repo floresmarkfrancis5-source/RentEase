@@ -10,7 +10,7 @@ services:
     runtime: docker
     plan: free
     rootDir: RentEase-BackEnd
-    healthCheckPath: /api/health
+    healthCheckPath: /api/health/ready
     envVars:
       - key: APP_ENV
         value: production
@@ -60,6 +60,8 @@ services:
         sync: false
       - key: PAYMONGO_WEBHOOK_SECRET
         sync: false
+      - key: PAYMONGO_FORCE_TEST_PISO
+        value: "true"
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: SMTP_HOST

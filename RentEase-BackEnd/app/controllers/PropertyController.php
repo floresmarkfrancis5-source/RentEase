@@ -27,7 +27,8 @@ class PropertyController extends BaseApiController
     public function index()
     {
         $this->api->require_method('GET');
-        $rows = $this->Property_model->all_with_counts($this->uid());
+        $q = $this->api->get_query_params();
+        $rows = $this->Property_model->all_with_counts($this->uid(), ($q['archived'] ?? '') === '1');
         $this->ok(['data' => $rows, 'count' => count($rows)]);
     }
 
@@ -87,11 +88,22 @@ class PropertyController extends BaseApiController
     public function destroy($id)
     {
         $this->api->require_method('DELETE');
-        $this->not_found_unless($this->Property_model->find($id, $this->uid()), 'Property');
-        if ($this->Property_model->has_lease_history($id)) {
-            $this->fail('This property has lease records and cannot be deleted. End its leases and keep it for your records.', 409);
+        $result = $this->Property_model->archive($id, $this->uid());
+        if ($result === 'not_found') {
+            $this->fail('Property not found.', 404);
         }
-        $this->Property_model->delete_property($id);
-        $this->ok(['message' => 'Property deleted']);
+        if ($result === 'has_current_lease') {
+            $this->fail('Resolve all active, scheduled, or offered leases on this property before archiving it.', 409);
+        }
+        $this->ok(['message' => 'Property archived. Its history is preserved and it can be restored from Archived properties.']);
+    }
+
+    public function restore($id)
+    {
+        $this->api->require_method('POST');
+        if (!$this->Property_model->restore($id, $this->uid())) {
+            $this->fail('Archived property not found.', 404);
+        }
+        $this->ok(['message' => 'Property restored. Its units are available according to their own archive status.']);
     }
 }

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Field, Modal, PageHead, State, StatusPill, Table, clean, useLoad, useToast } from '../../components/ui'
 import { api, dateFmt, money } from '../../lib/api'
 import { compressImageFile } from '../../components/PhotoLightbox'
@@ -6,23 +7,46 @@ import ViewToolbar from '../../components/ViewToolbar'
 import UnitDetailModal from '../../components/UnitDetailModal'
 import ContractTemplateEditor from '../../components/ContractTemplateEditor'
 import { parseLeaseTemplate } from '../../lib/leaseContract'
+import { useLanguage } from '../../context/LanguageContext'
 
-const unitOccupancy = (unit) => unit.lease_status === 'scheduled' ? 'scheduled' : unit.occupancy_status
+const unitOccupancy = (unit) => unit.lease_status === 'offered' ? 'offered'
+  : unit.lease_status === 'scheduled' ? 'scheduled' : unit.occupancy_status
 
 export default function Units() {
+  const { t } = useLanguage()
+  const [searchParams] = useSearchParams()
   const { data, error, loading, reload } = useLoad('/api/admin/units')
+  const archived = useLoad('/api/admin/units?archived=1')
   const props = useLoad('/api/admin/properties')
   const [edit, setEdit] = useState(null)
   const [inspectUnit, setInspectUnit] = useState(null)
+  const [showArchived, setShowArchived] = useState(false)
   const [viewMode, setViewMode] = useState('grid') // 'grid' | 'list'
   const [search, setSearch] = useState('')
   const [propertyFilter, setPropertyFilter] = useState('all')
   const [occupancyFilter, setOccupancyFilter] = useState('all')
+  const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false)
   const [sortBy, setSortBy] = useState('name-asc')
   const [toast, flash] = useToast()
 
   const rawUnits = data || []
   const propertiesList = props.data || []
+  const summaryUnits = useMemo(() => propertyFilter === 'all'
+    ? rawUnits
+    : rawUnits.filter((unit) => String(unit.property_id) === propertyFilter), [rawUnits, propertyFilter])
+  const inventorySummary = useMemo(() => summaryUnits.reduce((summary, unit) => {
+    const occupancy = unitOccupancy(unit)
+    if (occupancy === 'occupied') summary.occupied += 1
+    if (occupancy === 'vacant') summary.vacant += 1
+    if (occupancy === 'scheduled') summary.scheduled += 1
+    if (Number(unit.open_repair_count) > 0 || unit.condition_tag === 'under_maintenance') summary.attention += 1
+    return summary
+  }, { occupied: 0, vacant: 0, scheduled: 0, attention: 0 }), [summaryUnits])
+
+  useEffect(() => {
+    const propertyId = searchParams.get('property_id')
+    if (propertyId) setPropertyFilter(propertyId)
+  }, [searchParams])
 
   const save = async (v) => {
     if (Array.isArray(v)) {
@@ -54,10 +78,22 @@ export default function Units() {
   }
 
   const del = async (u) => {
-    if (!window.confirm(`Delete unit ${u.unit_name}?`)) return
+    if (!window.confirm(`Archive unit ${u.unit_name}? Its history will be preserved and can be restored later.`)) return
     try {
       flash((await api(`/api/admin/units/${u.id}`, { method: 'DELETE', auth: true })).message)
       reload()
+      archived.reload()
+    } catch (e) {
+      flash(e.message, 'bad')
+    }
+  }
+
+  const restore = async (u) => {
+    if (!window.confirm(`Restore unit ${u.unit_name}? It will return to active unit views.`)) return
+    try {
+      flash((await api(`/api/admin/units/${u.id}/restore`, { method: 'POST', auth: true })).message)
+      reload()
+      archived.reload()
     } catch (e) {
       flash(e.message, 'bad')
     }
@@ -71,7 +107,7 @@ export default function Units() {
       const q = search.toLowerCase()
       result = result.filter(
         (u) =>
-          u.unit_name.toLowerCase().includes(q) ||
+          String(u.unit_name || '').toLowerCase().includes(q) ||
           (u.property_name && u.property_name.toLowerCase().includes(q)) ||
           (u.tenant_name && u.tenant_name.toLowerCase().includes(q)) ||
           (u.notes && u.notes.toLowerCase().includes(q))
@@ -85,6 +121,9 @@ export default function Units() {
     if (occupancyFilter !== 'all') {
       result = result.filter((u) => unitOccupancy(u) === occupancyFilter)
     }
+    if (needsAttentionOnly) {
+      result = result.filter((u) => Number(u.open_repair_count) > 0 || u.condition_tag === 'under_maintenance')
+    }
 
     result.sort((a, b) => {
       if (sortBy === 'name-asc') return a.unit_name.localeCompare(b.unit_name)
@@ -97,7 +136,7 @@ export default function Units() {
     })
 
     return result
-  }, [rawUnits, search, propertyFilter, occupancyFilter, sortBy])
+  }, [rawUnits, search, propertyFilter, occupancyFilter, needsAttentionOnly, sortBy])
 
   // Group filtered units by property (preserves sort order in Icons/Grid view)
   const groupedByProperty = useMemo(() => {
@@ -106,6 +145,7 @@ export default function Units() {
       const propKey = String(u.property_id || u.property_name)
       if (!map.has(propKey)) {
         map.set(propKey, {
+          id: propKey,
           name: u.property_name,
           address: [u.property_address, u.property_barangay, u.property_city].filter(Boolean).join(', '),
           units: [],
@@ -126,19 +166,54 @@ export default function Units() {
   }, [propertiesList])
 
   return (
-    <>
+    <div className="admin-units-page">
       <PageHead eyebrow="Manage" title="Units" sub="Rooms and apartments across your properties with real-time occupancy and photos.">
         <button className="btn btn--accent" onClick={() => setEdit({})} disabled={!propertiesList.length}>
-          + Add unit
+          + {t('Add unit')}
+        </button>
+        <button type="button" className="btn btn--ghost" onClick={() => setShowArchived(true)}>
+          {t('Archived')} {archived.data?.length ? `(${archived.data.length})` : ''}
         </button>
       </PageHead>
 
-      {propertiesList.length === 0 && <p className="alert">Add a property first, then its units.</p>}
+      {propertiesList.length === 0 && <p className="alert">{t('Add a property first, then its units.')}</p>}
 
-      <State loading={loading} error={error} empty={rawUnits.length === 0 && 'No units yet. Add your first room or unit.'}>
+      <State loading={loading} error={error} empty={rawUnits.length === 0 && t('No units yet. Add your first room or unit.')}>
         {rawUnits.length > 0 && (
           <>
-            {/* View Toolbar: Icons vs List & Sort */}
+            <section className="unit-inventory-summary" aria-label={t('Unit inventory summary')}>
+              <button type="button" className={`unit-summary-item${occupancyFilter === 'all' && !needsAttentionOnly ? ' is-active' : ''}`}
+                onClick={() => { setOccupancyFilter('all'); setNeedsAttentionOnly(false) }}
+                aria-pressed={occupancyFilter === 'all' && !needsAttentionOnly}
+                aria-label={`${summaryUnits.length} ${t('All units')}`}>
+                <strong>{summaryUnits.length}</strong><span className="unit-summary-item__label-full">{t('All units')}</span><span className="unit-summary-item__label-mobile">{t('All')}</span>
+              </button>
+              <button type="button" className={`unit-summary-item${occupancyFilter === 'occupied' && !needsAttentionOnly ? ' is-active' : ''}`}
+                onClick={() => { setOccupancyFilter('occupied'); setNeedsAttentionOnly(false) }}
+                aria-pressed={occupancyFilter === 'occupied' && !needsAttentionOnly}
+                aria-label={`${inventorySummary.occupied} ${t('Occupied')}`}>
+                <strong>{inventorySummary.occupied}</strong><span className="unit-summary-item__label-full">{t('Occupied')}</span><span className="unit-summary-item__label-mobile">{t('Occupied')}</span>
+              </button>
+              <button type="button" className={`unit-summary-item${occupancyFilter === 'vacant' && !needsAttentionOnly ? ' is-active' : ''}`}
+                onClick={() => { setOccupancyFilter('vacant'); setNeedsAttentionOnly(false) }}
+                aria-pressed={occupancyFilter === 'vacant' && !needsAttentionOnly}
+                aria-label={`${inventorySummary.vacant} ${t('Vacant')}`}>
+                <strong>{inventorySummary.vacant}</strong><span className="unit-summary-item__label-full">{t('Vacant')}</span><span className="unit-summary-item__label-mobile">{t('Vacant')}</span>
+              </button>
+              <button type="button" className={`unit-summary-item${occupancyFilter === 'scheduled' && !needsAttentionOnly ? ' is-active' : ''}`}
+                onClick={() => { setOccupancyFilter('scheduled'); setNeedsAttentionOnly(false) }}
+                aria-pressed={occupancyFilter === 'scheduled' && !needsAttentionOnly}
+                aria-label={`${inventorySummary.scheduled} ${t('Scheduled move-ins')}`}>
+                <strong>{inventorySummary.scheduled}</strong><span className="unit-summary-item__label-full">{t('Scheduled move-ins')}</span><span className="unit-summary-item__label-mobile">{t('Move-ins')}</span>
+              </button>
+              <button type="button" className={`unit-summary-item unit-summary-item--attention${needsAttentionOnly ? ' is-active' : ''}`}
+                onClick={() => { setOccupancyFilter('all'); setNeedsAttentionOnly(!needsAttentionOnly) }}
+                aria-pressed={needsAttentionOnly}
+                aria-label={`${inventorySummary.attention} ${t('Needs attention')}`}>
+                <strong>{inventorySummary.attention}</strong><span className="unit-summary-item__label-full">{t('Needs attention')}</span><span className="unit-summary-item__label-mobile">{t('Attention')}</span>
+              </button>
+            </section>
+
             <ViewToolbar
               view={viewMode}
               onViewChange={setViewMode}
@@ -159,210 +234,148 @@ export default function Units() {
               onFilterChange={setPropertyFilter}
               filterOptions={propertyFilterOptions}
             >
-              <select value={occupancyFilter} onChange={(e) => setOccupancyFilter(e.target.value)}>
-                <option value="all">All Occupancy</option>
-                <option value="vacant">Vacant (Available)</option>
-                <option value="scheduled">Move-in scheduled</option>
-                <option value="occupied">Occupied</option>
+              <select value={occupancyFilter} onChange={(e) => { setOccupancyFilter(e.target.value); setNeedsAttentionOnly(false) }}>
+                <option value="all">{t('All Occupancy')}</option>
+                <option value="vacant">{t('Vacant (Available)')}</option>
+                <option value="scheduled">{t('Move-in scheduled')}</option>
+                <option value="occupied">{t('Occupied')}</option>
               </select>
+              <span className="unit-toolbar-count">{filteredUnits.length} {t(filteredUnits.length === 1 ? 'unit' : 'units')}</span>
             </ViewToolbar>
 
             {filteredUnits.length === 0 ? (
-              <div style={{ padding: '30px 20px', textAlign: 'center', background: 'var(--page-raised)', borderRadius: '12px', border: '1px solid var(--page-line)' }}>
-                <p className="muted" style={{ margin: 0 }}>No units match your search or filter criteria.</p>
+              <div className="unit-empty-filter">
+                <p>{t('No units match your search or filter criteria.')}</p>
               </div>
             ) : viewMode === 'grid' ? (
-              /* ICONS / GRID VIEW */
-              <div>
-                {groupedByProperty.map((group, idx) => (
-                  <div key={idx} className="property-group">
+              <div className="unit-property-groups">
+                {groupedByProperty.map((group) => (
+                  <section key={group.id} className="property-group unit-property-group" aria-labelledby={`unit-property-${group.id}`}>
                     <div className="property-group__head">
                       <div>
-                        <h3 className="property-group__title">
-                          <span>📍</span> {group.name}
-                        </h3>
-                        {group.address && <span className="property-group__address">{group.address}</span>}
+                        <h2 id={`unit-property-${group.id}`} className="property-group__title">{group.name}</h2>
+                        {group.address && <p className="property-group__address">{group.address}</p>}
                       </div>
-                      <span className="property-group__count">
-                        {group.units.length} unit{group.units.length > 1 ? 's' : ''}
-                      </span>
+                      <span className="property-group__count">{group.units.length} {t(group.units.length === 1 ? 'unit' : 'units')}</span>
                     </div>
-
                     <div className="cards-grid">
-                      {group.units.map((u) => (
-                        <div
-                          key={u.id}
-                          className="unit-card"
-                          onClick={() => setInspectUnit(u)}
-                          title="Click to view full details"
-                        >
+                      {group.units.map((u) => {
+                        const openDetails = () => setInspectUnit(u)
+                        return (
+                        <article key={u.id} className="unit-card" role="button" tabIndex={0}
+                          aria-label={`${t('View unit details')}: ${u.unit_name}`}
+                          aria-haspopup="dialog"
+                          onClick={openDetails}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              openDetails()
+                            }
+                          }}>
                           <div className="unit-card__img-wrap">
                             {u.image_url ? (
-                              <img src={u.image_url} alt={u.unit_name} className="unit-card__img" />
+                              <img src={u.image_url} alt={`${u.unit_name} - ${t('Unit photo')}`} className="unit-card__img" />
                             ) : (
-                              <div className="unit-card__placeholder">
-                                <span className="unit-card__placeholder-icon">🏠</span>
-                                <span>No Photo</span>
+                              <div className="unit-card__placeholder" role="img" aria-label={t('No photo uploaded for this unit')}>
+                                <svg viewBox="0 0 96 76" aria-hidden="true"><path d="M17 66V21h26v45M43 32h36v34M10 66h76M26 31h8m-8 9h8m-8 9h8m-8 9h8m19-17h8m-8 10h8m-8 10h8m9-20h8m-8 10h8m-8 10h8" /></svg>
+                                <span>{t('No photo')}</span>
                               </div>
                             )}
-
-                            <div className="unit-card__badge-top-left">
+                            <div className={`unit-card__badge-top-left${unitOccupancy(u) === 'vacant' ? ' unit-card__badge-top-left--vacant' : ''}${unitOccupancy(u) === 'occupied' ? ' unit-card__badge-top-left--occupied' : ''}`}>
                               <StatusPill value={unitOccupancy(u)} />
                             </div>
-
-                            <div className="unit-card__badge-top-right">
-                              <span style={{ fontSize: '.72rem', padding: '2px 7px', background: 'rgba(0,0,0,0.65)', color: '#fff', borderRadius: '6px', backdropFilter: 'blur(4px)' }}>
-                                {(u.condition_tag || 'Good').replace('_', ' ')}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="unit-card__body">
-                            <div className="unit-card__title-row">
-                              <h4 className="unit-card__title">{u.unit_name}</h4>
-                              <span className="unit-card__price">{money(u.monthly_rent)}</span>
-                            </div>
-                            <div className="unit-card__property">
-                              📍 {u.property_name}
-                            </div>
-
-                            {u.lease_status === 'scheduled' ? (
-                              <div style={{ fontSize: '.84rem', color: 'var(--page-text)', marginBottom: 8 }}>
-                                🗓 Move-in scheduled for {dateFmt(u.start_date)} · {u.tenant_name}
+                            <div className="unit-card__view-hint" aria-hidden="true">{t('View unit details')}</div>
+                            <div className="unit-card__glass">
+                              <div className="unit-card__glass-head">
+                                <h3 className="unit-card__title">{u.unit_name}</h3>
+                                <div className="unit-card__rent"><strong>{money(u.monthly_rent)}</strong><span>{t('per month')}</span></div>
                               </div>
-                            ) : u.tenant_name ? (
-                              <div style={{ fontSize: '.84rem', color: 'var(--page-text)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>👤</span> <strong>{u.tenant_name}</strong>
-                              </div>
-                            ) : (
-                              <div style={{ fontSize: '.84rem', color: '#16a34a', marginBottom: 8 }}>
-                                ✓ Ready for tenant move-in
-                              </div>
-                            )}
-
-                            <div className="unit-card__specs">
-                              {Number(u.open_repair_count) > 0 && (
-                                <span className="unit-card__spec-pill" style={{ color: 'var(--warning, #b45309)', fontWeight: 700 }}>
-                                  🛠 {u.open_repair_count} open repair{Number(u.open_repair_count) === 1 ? '' : 's'}
+                              <div className="unit-card__glass-foot">
+                                <span className="unit-card__glass-tenant">
+                                  {u.lease_status === 'scheduled'
+                                    ? `${u.tenant_name || t('Tenant not assigned')} · ${t('Move-in')} ${dateFmt(u.start_date)}`
+                                    : u.lease_status === 'offered'
+                                      ? t('Lease offer pending')
+                                    : u.tenant_name || t('Ready for tenant move-in')}
                                 </span>
-                              )}
-                              <span className="unit-card__spec-pill">
-                                👥 {u.capacity || 1} {Number(u.capacity) > 1 ? 'occupants' : 'occupant'}
-                              </span>
-                              {u.notes && (
-                                <span className="unit-card__spec-pill" title={u.notes} style={{ maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  📝 {u.notes}
-                                </span>
-                              )}
+                                {Number(u.open_repair_count) > 0 && (
+                                  <span className="unit-card__glass-repairs">{u.open_repair_count} {t(Number(u.open_repair_count) === 1 ? 'open repair' : 'open repairs')}</span>
+                                )}
+                              </div>
                             </div>
                           </div>
-
-                          <div className="unit-card__foot">
-                            <button
-                              type="button"
-                              className="btn btn--ghost btn--sm"
-                              style={{ flex: 1 }}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setInspectUnit(u)
-                              }}
-                            >
-                              Details
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn--accent btn--sm"
-                              style={{ flex: 1 }}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setEdit(u)
-                              }}
-                            >
-                              Edit unit
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        </article>
+                      )})}
                     </div>
-                  </div>
+                  </section>
                 ))}
               </div>
             ) : (
-              /* LIST / TABLE VIEW */
-              <Table
-                rows={filteredUnits}
-                columns={[
-                  {
-                    key: 'photo',
-                    label: 'Photo',
-                    render: (r) =>
-                      r.image_url ? (
-                        <img
-                          src={r.image_url}
-                          alt={r.unit_name}
-                          style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--page-line)', display: 'block', cursor: 'pointer' }}
-                          onClick={() => setInspectUnit(r)}
-                        />
-                      ) : (
-                        <div
-                          style={{ width: 44, height: 44, borderRadius: 8, background: 'var(--page-raised)', border: '1px solid var(--page-line)', display: 'grid', placeItems: 'center', fontSize: '1.2rem', cursor: 'pointer' }}
-                          onClick={() => setInspectUnit(r)}
-                        >
-                          🏠
-                        </div>
-                      ),
-                  },
-                  {
-                    key: 'unit_name',
-                    label: 'Unit',
-                    render: (r) => (
+              <div className="unit-property-groups unit-property-groups--list">
+                {groupedByProperty.map((group) => (
+                  <section key={group.id} className="property-group unit-property-group" aria-labelledby={`unit-list-property-${group.id}`}>
+                    <div className="property-group__head">
                       <div>
-                        <strong style={{ cursor: 'pointer', color: 'var(--accent)' }} onClick={() => setInspectUnit(r)}>
-                          {r.unit_name}
-                        </strong>
-                        <br />
-                        <small className="muted">{r.property_name}</small>
+                        <h2 id={`unit-list-property-${group.id}`} className="property-group__title">{group.name}</h2>
+                        {group.address && <p className="property-group__address">{group.address}</p>}
                       </div>
-                    ),
-                  },
-                  { key: 'property_name', label: 'Property' },
-                  { key: 'monthly_rent', label: 'Rent', align: 'right', render: (r) => money(r.monthly_rent) },
-                  { key: 'occupancy_status', label: 'Occupancy', render: (r) => <StatusPill value={unitOccupancy(r)} /> },
-                  { key: 'open_repair_count', label: 'Repairs', render: (r) => Number(r.open_repair_count) > 0
-                    ? <span className="tag tag--danger">{r.open_repair_count} open</span>
-                    : <span className="muted">None</span> },
-                  { key: 'condition_tag', label: 'Condition', render: (r) => <StatusPill value={r.condition_tag} /> },
-                  { key: 'tenant_name', label: 'Tenant', render: (r) => r.tenant_name || <span className="muted">—</span> },
-                ]}
-                actions={(r) => (
-                  <>
-                    <button className="btn btn--ghost btn--sm" onClick={() => setInspectUnit(r)}>
-                      Details
-                    </button>
-                    <button className="btn btn--ghost btn--sm" onClick={() => setEdit(r)}>
-                      Edit
-                    </button>
-                    <button className="btn btn--ghost btn--sm" style={{ color: '#ef4444' }} onClick={() => del(r)}>
-                      Delete
-                    </button>
-                  </>
-                )}
-              />
+                      <span className="property-group__count">{group.units.length} {t(group.units.length === 1 ? 'unit' : 'units')}</span>
+                    </div>
+                    <Table rows={group.units}
+                      columns={[
+                        { key: 'unit_name', label: 'Unit', render: (r) => <button type="button" className="unit-list-name" onClick={() => setInspectUnit(r)}>{r.unit_name}</button> },
+                        { key: 'monthly_rent', label: 'Rent', align: 'right', render: (r) => money(r.monthly_rent) },
+                        { key: 'occupancy_status', label: 'Occupancy', render: (r) => <StatusPill value={unitOccupancy(r)} /> },
+                        { key: 'tenant_name', label: 'Tenant', render: (r) => r.tenant_name || <span className="muted">—</span> },
+                        { key: 'condition_tag', label: 'Condition', render: (r) => <StatusPill value={r.condition_tag} /> },
+                        { key: 'open_repair_count', label: 'Repairs', render: (r) => Number(r.open_repair_count) > 0
+                          ? <span className="tag tag--warn">{r.open_repair_count} {t('open')}</span>
+                          : <span className="muted">{t('None')}</span> },
+                      ]}
+                      actions={(r) => (
+                        <div className="unit-list-actions">
+                          <button type="button" className="btn btn--ghost btn--sm" onClick={() => setInspectUnit(r)}>{t('Details')}</button>
+                          <button type="button" className="btn btn--accent btn--sm" onClick={() => setEdit(r)}>{t('Edit')}</button>
+                          <button type="button" className="btn btn--ghost btn--sm unit-list-actions__delete" onClick={() => del(r)}>{t('Archive')}</button>
+                        </div>
+                      )} />
+                  </section>
+                ))}
+              </div>
             )}
           </>
         )}
       </State>
 
-      {/* UNIT DETAILS WINDOW MODAL (with Edit unit and Delete unit buttons) */}
+      {/* Unit details with edit and archive actions. */}
       {inspectUnit && (
         <UnitDetailModal
           unit={inspectUnit}
           onClose={() => setInspectUnit(null)}
-          actionLabel="✏️ Edit unit"
+          actionLabel="Edit unit"
           onAction={(u) => setEdit(u)}
-          secondaryLabel="🗑️ Delete unit"
+          secondaryLabel="Archive unit"
           onSecondaryAction={(u) => del(u)}
         />
+      )}
+
+      {showArchived && (
+        <Modal title="Archived units" onClose={() => setShowArchived(false)}>
+          <State loading={archived.loading} error={archived.error} empty={archived.data?.length === 0 && t('No archived units.')}>
+            {archived.data && (
+              <Table rows={archived.data}
+                columns={[
+                  { key: 'unit_name', label: 'Unit', render: (u) => <strong>{u.unit_name}</strong> },
+                  { key: 'property_name', label: 'Property' },
+                  { key: 'archive_reason', label: 'Archive status', render: (u) => u.archived_at ? t('Unit archived') : t('Property archived') },
+                  { key: 'archived_at', label: 'Archived on', render: (u) => dateFmt(u.archived_at || u.property_archived_at) },
+                ]}
+                actions={(u) => u.property_archived_at
+                  ? <span className="muted">{t('Restore the property first')}</span>
+                  : <button type="button" className="btn btn--accent btn--sm" onClick={() => restore(u)}>{t('Restore')}</button>} />
+            )}
+          </State>
+        </Modal>
       )}
 
       {/* UNIT EDIT / ADD FORM MODAL */}
@@ -371,14 +384,14 @@ export default function Units() {
           key={edit.id || 'new'}
           unit={edit}
           properties={propertiesList}
-          existingUnits={rawUnits}
+          existingUnits={[...rawUnits, ...(archived.data || [])]}
           onSubmit={save}
           onClose={() => setEdit(null)}
         />
       )}
 
       {toast}
-    </>
+    </div>
   )
 }
 

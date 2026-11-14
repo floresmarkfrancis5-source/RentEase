@@ -68,12 +68,13 @@ export default function Header() {
     return () => window.removeEventListener('scroll', on)
   }, [pathname])
 
-  // Transparent over the hero photo (home, at the top of the page); solid header bar everywhere else.
-  const onHero = pathname === '/' && top
+  // Transparent over full-bleed photo backgrounds while the page is at the top.
+  const onHero = (pathname === '/' || pathname === '/onboarding') && top
   const ready = user && !user.must_change_password
+  const isDashboard = pathname.startsWith('/admin') || pathname.startsWith('/tenant') || pathname.startsWith('/superadmin')
 
   return (
-    <header className={`site-header${onHero ? ' on-hero' : ''}`}>
+    <header className={`site-header${onHero ? ' on-hero' : ''}${isDashboard ? ' site-header--dashboard' : ''}${ready ? ' site-header--authenticated' : ''}`}>
       <div className="wrap">
         <Brand />
         <nav className="nav" aria-label={t('Main navigation')}>

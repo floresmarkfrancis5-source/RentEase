@@ -54,28 +54,54 @@ function ExpiryBadge({ endDate }) {
 function FinancialSummary({ data }) {
   if (!data) return null
   const cards = [
-    { label: 'Active Leases',    value: data.active_leases_count,     accent: false },
-    { label: 'Monthly Income',   value: money(data.total_monthly_rent),      accent: true  },
-    { label: 'Est. Annual Income', value: money(data.estimated_annual_income), accent: true  },
-    { label: 'Total Deposits',   value: money(data.total_deposits),          accent: false },
-    { label: 'Total Advances',   value: money(data.total_advances),          accent: false },
-    { label: 'Down Payments',    value: money(data.total_down_payments),     accent: false },
+    { label: 'Monthly Income', value: money(data.total_monthly_rent), accent: true },
+    { label: 'Est. Annual Income', value: money(data.estimated_annual_income), accent: true },
+    { label: 'Total Deposits', value: money(data.total_deposits) },
+    { label: 'Total Advances', value: money(data.total_advances) },
+    { label: 'Down Payments', value: money(data.total_down_payments) },
   ]
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-      gap: 12, marginBottom: 24, padding: '18px 20px',
-      background: 'var(--page-raised)', borderRadius: 14, border: '1px solid var(--page-line)',
-    }}>
-      {cards.map((c) => (
-        <div key={c.label} style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '.74rem', color: 'var(--page-muted)', marginBottom: 2 }}>{c.label}</div>
-          <div style={{
-            fontSize: c.accent ? '1.15rem' : '1rem', fontWeight: 700,
-            color: c.accent ? 'var(--accent, #6366f1)' : 'var(--page-text)',
-          }}>{c.value}</div>
-        </div>
-      ))}
+    <details className="lease-financial-summary">
+      <summary>Financial overview <span>{data.active_leases_count} active leases</span></summary>
+      <div className="lease-financial-summary__metrics">
+        {cards.map((card) => (
+          <div key={card.label}>
+            <span>{card.label}</span>
+            <strong className={card.accent ? 'is-accent' : ''}>{card.value}</strong>
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function LeaseActions({ lease, onDetails, onEdit, onRenew, onEnd, onCancel }) {
+  const menuId = `lease-actions-${lease.id}`
+  const hasActions = lease.status === 'active' || ['offered', 'scheduled'].includes(lease.status)
+  function runAction(event, action) {
+    event.currentTarget.closest('details')?.removeAttribute('open')
+    action(lease)
+  }
+  return (
+    <div className="lease-row-actions">
+      <button type="button" className="btn btn--ghost btn--sm" onClick={() => onDetails(lease)}>Details</button>
+      {hasActions && (
+        <details className="lease-action-menu">
+          <summary aria-label={`More actions for ${lease.tenant_name}`} aria-controls={menuId}>More</summary>
+          <div id={menuId} className="lease-action-menu__items">
+            {lease.status === 'active' && (
+              <>
+                <button type="button" onClick={(event) => runAction(event, onEdit)}>Edit terms</button>
+                <button type="button" onClick={(event) => runAction(event, onRenew)}>Renew</button>
+                <button type="button" className="is-danger" onClick={(event) => runAction(event, onEnd)}>End lease</button>
+              </>
+            )}
+            {['offered', 'scheduled'].includes(lease.status) && (
+              <button type="button" className="is-danger" onClick={(event) => runAction(event, onCancel)}>Cancel lease</button>
+            )}
+          </div>
+        </details>
+      )}
     </div>
   )
 }
@@ -252,9 +278,9 @@ function NewLeaseForm({ units, tenants, onSubmit, onClose }) {
   }
 
   return (
-    <Modal title="Start a lease or schedule a move-in" onClose={onClose}>
+    <Modal title="Assign a tenant to a unit" onClose={onClose}>
       <form className="stack" onSubmit={submit} noValidate>
-        <p className="muted">A lease records who rents a unit, when rent starts, and the agreed rent and deposit. The unit stays available until its scheduled move-in date.</p>
+        <p className="muted">Assign an existing tenant account that does not have a current lease. The unit stays available until the scheduled move-in date.</p>
         <Field label="Vacant unit">
           <select required value={values.unit_id} onChange={(event) => selectUnit(event.target.value)}>
             <option value="">Choose a unit</option>
@@ -333,8 +359,8 @@ export default function Leases() {
       if (statusFilter !== 'all' && lease.status !== statusFilter) return false
       if (expiryFilter !== 'all') {
         const days = daysUntil(lease.end_date)
-        if (expiryFilter === 'expiring7'  && !(days !== null && days >= 0 && days <= 7))  return false
-        if (expiryFilter === 'expiring30' && !(days !== null && days >= 0 && days <= 30)) return false
+        if (expiryFilter === 'expiring7'  && !(lease.status === 'active' && days !== null && days >= 0 && days <= 7))  return false
+        if (expiryFilter === 'expiring30' && !(lease.status === 'active' && days !== null && days >= 0 && days <= 30)) return false
         if (expiryFilter === 'open'       && lease.end_date) return false
       }
       if (!term) return true
@@ -392,24 +418,92 @@ export default function Leases() {
   const endedCount  = (leases.data || []).filter((l) => l.status === 'ended').length
   const pendingCount = (leases.data || []).filter((l) => l.status === 'offered').length
   const scheduledCount = (leases.data || []).filter((l) => l.status === 'scheduled').length
-  const expiring7   = (leases.data || []).filter((l) => { const d = daysUntil(l.end_date); return d !== null && d >= 0 && d <= 7 }).length
-  const expiring30  = (leases.data || []).filter((l) => { const d = daysUntil(l.end_date); return d !== null && d >= 0 && d <= 30 }).length
+  const expiring7   = (leases.data || []).filter((l) => { const d = daysUntil(l.end_date); return l.status === 'active' && d !== null && d >= 0 && d <= 7 }).length
+  const expiring30  = (leases.data || []).filter((l) => { const d = daysUntil(l.end_date); return l.status === 'active' && d !== null && d >= 0 && d <= 30 }).length
+  const assignableUnits = (units.data || []).filter((unit) =>
+    unit.occupancy_status === 'vacant' && unit.condition_tag === 'good_condition' && !unit.lease_id
+  )
+  const assignableTenants = (tenants.data || []).filter((tenant) => tenant.is_active && !tenant.lease_id)
+  const attentionItems = (leases.data || [])
+    .filter((lease) => lease.status === 'offered' || (
+      lease.status === 'active' && daysUntil(lease.end_date) !== null &&
+      daysUntil(lease.end_date) >= 0 && daysUntil(lease.end_date) <= 30
+    ))
+    .sort((a, b) => {
+      if (a.status === 'offered' && b.status !== 'offered') return -1
+      if (b.status === 'offered' && a.status !== 'offered') return 1
+      return (a.end_date || '').localeCompare(b.end_date || '')
+    })
+  const hasFilters = search || statusFilter !== 'all' || expiryFilter !== 'all'
 
   return (
     <>
       <PageHead eyebrow="Manage" title="Leases" sub="A lease links a tenant to a unit and sets the move-in date, rent, deposit and due day.">
-        <button className="btn btn--accent" onClick={() => setForm({ kind: 'new' })}>+ New lease</button>
+        {assignableUnits.length > 0 && assignableTenants.length > 0 && (
+          <button className="btn btn--accent" onClick={() => setForm({ kind: 'assign' })}>Assign Tenant</button>
+        )}
       </PageHead>
-      <p className="alert" style={{ marginTop: 0 }}>Choose a vacant unit and tenant. Quick mode schedules the lease for the move-in date; optional contract mode sends the agreement to the tenant to accept first. Only active leases generate bills.</p>
+      <p className="lease-workflow-note">New tenant accounts automatically receive a scheduled lease. Use <strong>Assign Tenant</strong> only for an existing account without a current lease. Scheduled leases become active on the move-in date.</p>
+
+      <section className="lease-overview" aria-label="Lease overview">
+        <button type="button" className={`lease-overview__item${statusFilter === 'active' && expiryFilter === 'all' ? ' is-active' : ''}`}
+          onClick={() => { setSearch(''); setStatusFilter('active'); setExpiryFilter('all') }}
+          aria-pressed={statusFilter === 'active' && expiryFilter === 'all'}>
+          <strong>{activeCount}</strong><span>Active</span>
+        </button>
+        <button type="button" className={`lease-overview__item${statusFilter === 'scheduled' && expiryFilter === 'all' ? ' is-active' : ''}`}
+          onClick={() => { setSearch(''); setStatusFilter('scheduled'); setExpiryFilter('all') }}
+          aria-pressed={statusFilter === 'scheduled' && expiryFilter === 'all'}>
+          <strong>{scheduledCount}</strong><span>Move-in scheduled</span>
+        </button>
+        <button type="button" className={`lease-overview__item${statusFilter === 'offered' && expiryFilter === 'all' ? ' is-active' : ''}`}
+          onClick={() => { setSearch(''); setStatusFilter('offered'); setExpiryFilter('all') }}
+          aria-pressed={statusFilter === 'offered' && expiryFilter === 'all'}>
+          <strong>{pendingCount}</strong><span>Awaiting approval</span>
+        </button>
+        <button type="button" className={`lease-overview__item${expiryFilter === 'expiring30' ? ' is-active' : ''}`}
+          onClick={() => { setSearch(''); setStatusFilter('all'); setExpiryFilter('expiring30') }}
+          aria-pressed={expiryFilter === 'expiring30'}>
+          <strong>{expiring30}</strong><span>Expiring in 30 days</span>
+        </button>
+      </section>
+
+      {attentionItems.length > 0 && (
+        <section className="lease-attention" aria-labelledby="lease-attention-title">
+          <div className="lease-attention__head">
+            <div>
+              <h2 id="lease-attention-title">Needs attention</h2>
+              <p>Pending contract approvals and leases ending within 30 days.</p>
+            </div>
+            <span>{attentionItems.length}</span>
+          </div>
+          <ul>
+            {attentionItems.slice(0, 4).map((lease) => (
+              <li key={lease.id}>
+                <div className="lease-attention__detail">
+                  <strong>{lease.tenant_name}</strong>
+                  <span>{lease.unit_name} · {lease.property_name}</span>
+                </div>
+                <span className={lease.status === 'offered' ? 'lease-attention__reason is-pending' : 'lease-attention__reason'}>
+                  {lease.status === 'offered'
+                    ? 'Awaiting tenant approval'
+                    : `${daysUntil(lease.end_date) <= 7 ? 'Expiring soon' : 'Expiring'} · ${dateFmt(lease.end_date)}`}
+                </span>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => setSelected(lease)}>Review</button>
+              </li>
+            ))}
+          </ul>
+          {attentionItems.length > 4 && (
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => {
+              setSearch('')
+              setStatusFilter('all')
+              setExpiryFilter('all')
+            }}>View all leases</button>
+          )}
+        </section>
+      )}
 
       {!financials.loading && financials.data && <FinancialSummary data={financials.data} />}
-
-      {expiring7 > 0 && (
-        <div className="alert alert--warn" style={{ marginBottom: 16 }}>
-          <strong>{expiring7} lease{expiring7 > 1 ? 's' : ''}</strong> expire within 7 days.{' '}
-          <button className="btn btn--ghost btn--sm" onClick={() => setExpiryFilter('expiring7')}>View</button>
-        </div>
-      )}
 
       <ViewToolbar
         view={viewMode} onViewChange={setViewMode}
@@ -441,7 +535,7 @@ export default function Leases() {
           <option value="expiring30">Expiring in 30d ({expiring30})</option>
           <option value="open">Open-ended</option>
         </select>
-        {(search || statusFilter !== 'all' || expiryFilter !== 'all') && (
+        {hasFilters && (
           <button className="btn btn--ghost btn--sm" onClick={() => { setSearch(''); setStatusFilter('all'); setExpiryFilter('all') }}>Clear</button>
         )}
       </ViewToolbar>
@@ -452,9 +546,9 @@ export default function Leases() {
             No leases match your criteria.
           </div>
         ) : viewMode === 'grid' ? (
-          <div className="cards-grid">
+          <div className="cards-grid lease-cards-grid">
             {rows.map((l) => (
-              <div key={l.id} className="request-card">
+              <article key={l.id} className="request-card lease-card">
                 <div className="request-card__head">
                   <div>
                     <h3 className="request-card__title">{l.tenant_name}</h3>
@@ -462,62 +556,31 @@ export default function Leases() {
                   </div>
                   <StatusPill value={l.status} />
                 </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px 12px', fontSize: '.84rem', background: 'var(--page-bg)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--page-line)' }}>
-                  <div>
-                    <span className="muted" style={{ display: 'block', fontSize: '.74rem' }}>Monthly Rent</span>
-                    <strong style={{ color: 'var(--accent, #6366f1)', fontSize: '1.05rem' }}>{money(l.monthly_rent)}</strong>
+                <div className="lease-card__facts">
+                  <div className="lease-card__rent">
+                    <span>Monthly rent</span>
+                    <strong>{money(l.monthly_rent)}</strong>
                   </div>
                   <div>
-                    <span className="muted" style={{ display: 'block', fontSize: '.74rem' }}>Deposit</span>
-                    <strong>{money(l.deposit)}</strong>
+                    <span>{l.status === 'scheduled' || l.status === 'offered' ? 'Move-in date' : 'Start date'}</span>
+                    <strong>{dateFmt(l.start_date)}</strong>
                   </div>
                   <div>
-                    <span className="muted" style={{ display: 'block', fontSize: '.74rem' }}>Start Date</span>
-                    <span>{dateFmt(l.start_date)}{l.status === 'offered' ? ' · move-in' : ''}</span>
+                    <span>Lease end</span>
+                    <strong><ExpiryBadge endDate={l.end_date} /></strong>
                   </div>
-                  <div>
-                    <span className="muted" style={{ display: 'block', fontSize: '.74rem' }}>Expiry</span>
-                    <ExpiryBadge endDate={l.end_date} />
-                  </div>
-                  {l.contract_term && l.contract_term !== 'monthly' && (
-                    <div>
-                      <span className="muted" style={{ display: 'block', fontSize: '.74rem' }}>Contract</span>
-                      <span>{CONTRACT_TERM_OPTIONS.find(o => o.value === l.contract_term)?.label || l.contract_term}</span>
-                    </div>
-                  )}
-                  {Number(l.estimated_annual_income) > 0 && (
-                    <div>
-                      <span className="muted" style={{ display: 'block', fontSize: '.74rem' }}>Est. Annual</span>
-                      <span style={{ color: '#16a34a', fontWeight: 600 }}>{money(l.estimated_annual_income)}</span>
-                    </div>
-                  )}
-                  {Number(l.advance_payment) > 0 && (
-                    <div>
-                      <span className="muted" style={{ display: 'block', fontSize: '.74rem' }}>Advance</span>
-                      <span>{money(l.advance_payment)}</span>
-                    </div>
-                  )}
-                  {Number(l.down_payment) > 0 && (
-                    <div>
-                      <span className="muted" style={{ display: 'block', fontSize: '.74rem' }}>Down Payment</span>
-                      <span>{money(l.down_payment)}</span>
-                    </div>
-                  )}
                 </div>
-
-                <div className="request-card__foot">
-                  <button className="btn btn--ghost btn--sm" onClick={() => setSelected(l)}>Details</button>
-                  {l.status === 'active' && (
-                    <>
-                      <button className="btn btn--ghost btn--sm" onClick={() => setForm({ kind: 'edit', lease: l })}>Edit</button>
-                      <button className="btn btn--ghost btn--sm" onClick={() => setForm({ kind: 'renew', lease: l })}>Renew</button>
-                      <button className="btn btn--ghost btn--sm" style={{ color: 'var(--danger)' }} onClick={() => endLease(l)}>End</button>
-                    </>
-                  )}
-                  {['offered', 'scheduled'].includes(l.status) && <button className="btn btn--ghost btn--sm" style={{ color: 'var(--danger)' }} onClick={() => cancelScheduled(l)}>Cancel</button>}
+                <div className="request-card__foot lease-card__foot">
+                  <LeaseActions
+                    lease={l}
+                    onDetails={setSelected}
+                    onEdit={(lease) => setForm({ kind: 'edit', lease })}
+                    onRenew={(lease) => setForm({ kind: 'renew', lease })}
+                    onEnd={endLease}
+                    onCancel={cancelScheduled}
+                  />
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         ) : (
@@ -528,29 +591,17 @@ export default function Leases() {
               { key: 'unit_name',    label: 'Unit / Property', render: (l) => (<>{l.unit_name}<br /><small className="muted">{l.property_name}</small></>)},
               { key: 'term',         label: 'Term', render: (l) => (<>{dateFmt(l.start_date)}<br /><ExpiryBadge endDate={l.end_date} /></>)},
               { key: 'monthly_rent', label: 'Rent', align: 'right', render: (l) => (<>{money(l.monthly_rent)}<br /><small className="muted">due day {l.due_day}</small></>)},
-              { key: 'deposit',      label: 'Deposit', align: 'right', render: (l) => money(l.deposit) },
-              { key: 'contract',     label: 'Contract', render: (l) => (
-                l.contract_term && l.contract_term !== 'monthly'
-                  ? <><span className="tag">{CONTRACT_TERM_OPTIONS.find(o => o.value === l.contract_term)?.label || l.contract_term}</span>{l.contract_months ? <><br/><small className="muted">{l.contract_months}mo</small></> : null}</>
-                  : <span className="muted">Monthly</span>
-              )},
-              { key: 'annual', label: 'Est. Annual', align: 'right', render: (l) => (
-                Number(l.estimated_annual_income) > 0
-                  ? <span style={{ color: '#16a34a', fontWeight: 600 }}>{money(l.estimated_annual_income)}</span>
-                  : <span className="muted">-</span>
-              )},
               { key: 'status', label: 'Status', render: (l) => <StatusPill value={l.status} /> },
             ]}
             actions={(lease) => (
-              <div className="lease-actions">
-                <button className="btn btn--ghost btn--sm" onClick={() => setSelected(lease)}>Details</button>
-                {lease.status === 'active' && <>
-                  <button className="btn btn--ghost btn--sm" onClick={() => setForm({ kind: 'edit', lease })}>Edit terms</button>
-                  <button className="btn btn--ghost btn--sm" onClick={() => setForm({ kind: 'renew', lease })}>Renew</button>
-                  <button className="btn btn--ghost btn--sm" style={{ color: 'var(--danger)' }} onClick={() => endLease(lease)}>End</button>
-                </>}
-                {['offered', 'scheduled'].includes(lease.status) && <button className="btn btn--ghost btn--sm" style={{ color: 'var(--danger)' }} onClick={() => cancelScheduled(lease)}>Cancel</button>}
-              </div>
+              <LeaseActions
+                lease={lease}
+                onDetails={setSelected}
+                onEdit={(item) => setForm({ kind: 'edit', lease: item })}
+                onRenew={(item) => setForm({ kind: 'renew', lease: item })}
+                onEnd={endLease}
+                onCancel={cancelScheduled}
+              />
             )}
           />
         )}
@@ -558,9 +609,9 @@ export default function Leases() {
 
       <BillingDefaults />
 
-      {form?.kind === 'new' && <NewLeaseForm
-        units={(units.data || []).filter((u) => u.occupancy_status === 'vacant' && u.condition_tag === 'good_condition' && !u.lease_id)}
-        tenants={(tenants.data || []).filter((t) => t.is_active && !t.lease_id)}
+      {form?.kind === 'assign' && <NewLeaseForm
+        units={assignableUnits}
+        tenants={assignableTenants}
         onSubmit={saveNew}
         onClose={() => setForm(null)}
       />}

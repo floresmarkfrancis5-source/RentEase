@@ -100,7 +100,7 @@ export default function TransferRequests() {
     <>
       <PageHead
         eyebrow="Operations"
-        title="Transfer & move-in requests"
+        title="Transfer requests"
         sub="Review unit transfers and requests to start a scheduled lease early."
       />
 
@@ -204,22 +204,25 @@ export default function TransferRequests() {
                           </button>
                           <button
                             type="button"
-                            className="btn btn--ghost btn--sm"
+                            className="btn btn--ghost btn--sm transfer-delete-icon"
                             style={{ color: '#ef4444' }}
                             onClick={() => deleteRequest(r)}
                             title="Delete request"
+                            aria-label="Delete request"
                           >
-                            🗑️
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" /></svg>
                           </button>
                         </div>
                       ) : (
                         <button
                           type="button"
-                          className="btn btn--ghost btn--sm"
+                          className="btn btn--ghost btn--sm transfer-delete-icon"
                           style={{ color: '#ef4444', marginLeft: 'auto' }}
                           onClick={() => deleteRequest(r)}
+                          aria-label="Delete record"
                         >
-                          🗑️ Delete record
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" /></svg>
+                          <span>Delete record</span>
                         </button>
                       )}
                     </div>

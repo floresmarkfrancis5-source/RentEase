@@ -1,15 +1,18 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import AssistantAvatar from '../../components/AssistantAvatar'
 import Glass from '../../components/Glass'
+import LandlordReport from '../../components/LandlordReport'
 import { PageHead, State, useLoad } from '../../components/ui'
 import { dateFmt, money } from '../../lib/api'
 import HelpTip from '../../components/HelpTip'
 import { helpFor, useLanguage } from '../../context/LanguageContext'
 
-function Stat({ label, value, sub, tone }) {
+function Stat({ label, value, sub, variant = 'neutral' }) {
   const { language, t } = useLanguage()
   const help = helpFor(label, language)
   return (
-    <Glass className={`stat ${tone ? `stat--${tone}` : ''}`}>
+    <Glass className={`stat dashboard-stat dashboard-stat--${variant}`}>
       <span className="stat__label">{t(label)}{help && <HelpTip text={help} label={language === 'tl' ? `Tulong tungkol sa: ${t(label)}` : `Help about: ${label}`} />}</span>
       <span className="stat__value">{value}</span>
       {sub && <span className="stat__sub">{t(sub)}</span>}
@@ -20,38 +23,99 @@ function Stat({ label, value, sub, tone }) {
 export default function Dashboard() {
   const { t } = useLanguage()
   const { data: d, error, loading } = useLoad('/api/admin/dashboard')
+  const [reportOpen, setReportOpen] = useState(false)
   const max = d ? Math.max(1, ...d.monthly.flatMap((m) => [m.billed, m.collected])) : 1
 
   return (
     <>
-      <PageHead eyebrow="Landlord" title="Dashboard" sub="Collections, balances and occupancy at a glance." />
+      <PageHead eyebrow="Landlord" title="Dashboard" sub="Collections, balances and occupancy at a glance.">
+        <Link to="/admin/properties?action=add" className="btn btn--ghost">{t('Add property')}</Link>
+        <Link to="/admin/bills" className="btn btn--ghost">{t('Generate bills')}</Link>
+        <button type="button" className="btn btn--accent" onClick={() => setReportOpen(true)}>{t('Download report')}</button>
+      </PageHead>
       <State loading={loading} error={error}>
         {d && (
           <>
-            {/* Expiry + overdue alerts */}
-            {d.expiring_leases?.length > 0 && (
-              <div className="alert alert--warn" style={{ marginBottom: 14 }}>
-                ⏰ <strong>{d.expiring_leases.length} lease{d.expiring_leases.length > 1 ? 's' : ''}</strong> expiring within 30 days.{' '}
-                <Link to="/admin/leases" className="btn btn--ghost btn--sm">View leases →</Link>
+            <Glass className="dashboard-assistant">
+              <span className="dashboard-assistant__icon" aria-hidden="true">
+                <AssistantAvatar className="assistant-avatar--dashboard" gears />
+              </span>
+              <div className="dashboard-assistant__copy">
+                <span className="dashboard-assistant__eyebrow">{t('RentEase Assistant')}</span>
+                <h2>{t('A little help with your rentals?')}</h2>
+                <p>{t('Ask about your properties, units, tenants, or rent—or prepare a draft to review before making changes.')}</p>
               </div>
-            )}
-            {d.overdue.count > 0 && (
-              <div className="alert alert--error" style={{ marginBottom: 14 }}>
-                ⚠ <strong>{d.overdue.count} overdue bill{d.overdue.count > 1 ? 's' : ''}</strong> totalling {money(d.overdue.amount)}.{' '}
-                <Link to="/admin/bills?status=overdue" className="btn btn--ghost btn--sm">View bills →</Link>
-              </div>
+              <Link to="/admin/assistant" className="btn btn--accent">
+                {t('Open Assistant')} <span aria-hidden="true">→</span>
+              </Link>
+            </Glass>
+
+            <div className="stats stats--primary">
+              <Stat label="Collected this month" value={money(d.collected.this_month)} sub={`${d.collected.payments_count} ${t('payments all time')}`} variant="collected" />
+              <Stat label="Outstanding" value={money(d.outstanding.amount)} sub={`${d.outstanding.count} ${t('unpaid bills')}`} variant="outstanding" />
+              <Stat label="Overdue" value={money(d.overdue.amount)} sub={`${d.overdue.count} ${t('late bills')}`} variant={d.overdue.count ? 'overdue' : 'neutral'} />
+              <Stat label="Occupancy" value={`${d.units.occupied}/${d.units.total}`} sub={`${d.units.vacant} ${t('vacant')} · ${d.properties} ${t('properties')}`} variant="occupancy" />
+            </div>
+
+            {(d.overdue_bills?.length > 0 || d.expiring_leases?.length > 0) && (
+              <Glass className="panel dashboard-attention">
+                <div className="dashboard-attention__head">
+                  <div>
+                    <span className="dashboard-attention__eyebrow">{t('Action items')}</span>
+                    <h2 className="panel__title">{t('Needs attention')}</h2>
+                  </div>
+                  <span className="dashboard-attention__count">{d.overdue.count + d.expiring_leases.length} {t('items')}</span>
+                </div>
+                <div className="dashboard-attention__grid">
+                  {d.overdue_bills?.length > 0 && (
+                    <section className="dashboard-attention__group">
+                      <div className="dashboard-attention__group-head">
+                        <h3>{t('Overdue bills')}</h3>
+                        <span className="dashboard-attention__badge dashboard-attention__badge--danger">{d.overdue.count}</span>
+                      </div>
+                      <ul className="list">
+                        {d.overdue_bills.slice(0, 3).map((bill) => (
+                          <li key={bill.id}>
+                            <span><strong>{bill.tenant_name}</strong><span className="muted"> · {bill.unit_name} · {bill.days_late} {t('days late')}</span></span>
+                            <strong className="dashboard-attention__amount">{money(bill.amount)}</strong>
+                          </li>
+                        ))}
+                      </ul>
+                      <Link to="/admin/bills?status=overdue" className="btn btn--ghost btn--sm">{t('View overdue bills →')}</Link>
+                    </section>
+                  )}
+                  {d.expiring_leases?.length > 0 && (
+                    <section className="dashboard-attention__group">
+                      <div className="dashboard-attention__group-head">
+                        <h3>{t('Leases expiring soon')}</h3>
+                        <span className="dashboard-attention__badge">{d.expiring_leases.length}</span>
+                      </div>
+                      <ul className="list">
+                        {d.expiring_leases.slice(0, 3).map((lease) => (
+                          <li key={lease.id}>
+                            <span><strong>{lease.tenant_name}</strong><span className="muted"> · {lease.unit_name} · {lease.property_name}</span></span>
+                            <span className={Number(lease.days_left) <= 7 ? 'dashboard-attention__urgent' : 'dashboard-attention__due'}>
+                              {Number(lease.days_left) <= 0 ? t('Expired') : `${lease.days_left} ${t('days left')}`}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <Link to="/admin/leases" className="btn btn--ghost btn--sm">{t('View leases →')}</Link>
+                    </section>
+                  )}
+                </div>
+              </Glass>
             )}
 
-            <div className="stats">
-              <Stat label="Collected this month" value={money(d.collected.this_month)} sub={`${d.collected.payments_count} ${t('payments all time')}`} />
-              <Stat label="Outstanding" value={money(d.outstanding.amount)} sub={`${d.outstanding.count} ${t('unpaid bills')}`} />
-              <Stat label="Overdue" value={money(d.overdue.amount)} sub={`${d.overdue.count} ${t('late bills')}`} tone={d.overdue.count ? 'bad' : ''} />
-              <Stat label="Occupancy" value={`${d.units.occupied}/${d.units.total}`} sub={`${d.units.vacant} ${t('vacant')} · ${d.properties} ${t('properties')}`} />
-              <Stat label="Tenants" value={d.tenants} />
-              <Stat label="Open repairs" value={d.open_maintenance} tone={d.open_maintenance ? 'warn' : ''} />
-              {d.financials && <Stat label="Monthly Income" value={money(d.financials.total_monthly_rent)} sub={`${d.financials.active_leases_count} ${t('active leases')}`} />}
-              {d.financials && Number(d.financials.estimated_annual_income) > 0 && <Stat label="Est. Annual Income" value={money(d.financials.estimated_annual_income)} sub="from active leases" />}
-            </div>
+            <section className="dashboard-secondary" aria-labelledby="dashboard-secondary-title">
+              <h2 id="dashboard-secondary-title" className="dashboard-secondary__title">{t('Portfolio details')}</h2>
+              <div className="stats stats--secondary">
+                <Stat label="Tenants" value={d.tenants} variant="tenants" />
+                <Stat label="Open repairs" value={d.open_maintenance} variant={d.open_maintenance ? 'repairs' : 'neutral'} />
+                {d.financials && <Stat label="Monthly Income" value={money(d.financials.total_monthly_rent)} sub={`${d.financials.active_leases_count} ${t('active leases')}`} variant="income" />}
+                {d.financials && Number(d.financials.estimated_annual_income) > 0 && <Stat label="Est. Annual Income" value={money(d.financials.estimated_annual_income)} sub="from active leases" variant="annual" />}
+              </div>
+            </section>
 
             <div className="cols2">
               <Glass className="panel">
@@ -84,55 +148,10 @@ export default function Dashboard() {
                 )}
               </Glass>
             </div>
-
-            {/* Overdue bills list */}
-            {d.overdue_bills?.length > 0 && (
-              <Glass className="panel" style={{ marginTop: 18 }}>
-                <h2 className="panel__title">⚠ {t('Overdue bills')}</h2>
-                <ul className="list">
-                  {d.overdue_bills.map((b) => (
-                    <li key={b.id}>
-                      <span>
-                        <strong>{b.tenant_name}</strong>
-                        <span className="muted"> · {b.unit_name} · {b.period_month}</span>
-                        <br /><small style={{ color: 'var(--danger)' }}>{b.days_late} day{b.days_late !== 1 ? 's' : ''} late (due {dateFmt(b.due_date)})</small>
-                      </span>
-                      <strong style={{ color: 'var(--danger)' }}>{money(b.amount)}</strong>
-                    </li>
-                  ))}
-                </ul>
-                <div style={{ marginTop: 10 }}>
-                  <Link to="/admin/bills?status=overdue" className="btn btn--ghost btn--sm">{t('All overdue bills →')}</Link>
-                </div>
-              </Glass>
-            )}
-
-            {/* Expiring leases list */}
-            {d.expiring_leases?.length > 0 && (
-              <Glass className="panel" style={{ marginTop: 18 }}>
-                <h2 className="panel__title">⏰ {t('Leases expiring soon')}</h2>
-                <ul className="list">
-                  {d.expiring_leases.map((l) => (
-                    <li key={l.id}>
-                      <span>
-                        <strong>{l.tenant_name}</strong>
-                        <span className="muted"> · {l.unit_name} · {l.property_name}</span>
-                        <br /><small style={{ color: Number(l.days_left) <= 7 ? 'var(--danger)' : '#92611a' }}>
-                          {Number(l.days_left) <= 0
-                            ? `Expired ${Math.abs(Number(l.days_left))} day(s) ago`
-                            : `Expires in ${l.days_left} day(s)`
-                          } · {dateFmt(l.end_date)}
-                        </small>
-                      </span>
-                      <Link to="/admin/leases" className="btn btn--ghost btn--sm">{t('Renew')}</Link>
-                    </li>
-                  ))}
-                </ul>
-              </Glass>
-            )}
           </>
         )}
       </State>
+      {reportOpen && <LandlordReport onClose={() => setReportOpen(false)} />}
     </>
   )
 }

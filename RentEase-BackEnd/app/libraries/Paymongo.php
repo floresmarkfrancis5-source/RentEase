@@ -12,7 +12,7 @@ class Paymongo
 {
     public function configured()
     {
-        return (string) config_item('paymongo_secret_key') !== '';
+        return strpos((string) config_item('paymongo_secret_key'), 'sk_test_') === 0;
     }
 
     private function base()
@@ -20,20 +20,19 @@ class Paymongo
         return rtrim((string) config_item('paymongo_api_url'), '/');
     }
 
-    /** 'test' for sk_test_ keys, 'live' for sk_live_ keys (real money!). */
+    /** Any key other than a test key is treated as live and refused. */
     public function mode()
     {
-        return strpos((string) config_item('paymongo_secret_key'), 'sk_live_') === 0 ? 'live' : 'test';
+        return strpos((string) config_item('paymongo_secret_key'), 'sk_test_') === 0 ? 'test' : 'live';
     }
 
     /**
-     * Safety net for school projects: a LIVE key would charge real money, so it is refused
-     * unless PAYMONGO_ALLOW_LIVE=true is set on purpose.
+     * This project must never create a live PayMongo transaction, including in production.
      */
     private function guard_test_mode()
     {
-        if ($this->mode() === 'live' && !config_item('paymongo_allow_live')) {
-            throw new RuntimeException('Live PayMongo keys are blocked. Use your sk_test_ key so no real money is charged.');
+        if ($this->mode() !== 'test') {
+            throw new RuntimeException('Only PayMongo test keys are allowed. Use an sk_test_ key; live payments are disabled.');
         }
     }
 
@@ -75,9 +74,13 @@ class Paymongo
      * Create a hosted checkout page for one bill.
      * @return array ['id' => 'cs_...', 'checkout_url' => 'https://checkout.paymongo.com/...']
      */
-    public function create_checkout(array $bill, $payment_id, $success_url, $cancel_url)
+    public function create_checkout(array $bill, $payment_id, $success_url, $cancel_url, ?array $methods = null)
     {
-        $methods = array_values(array_filter(array_map('trim', explode(',', (string) config_item('paymongo_methods')))));
+        $configured_methods = array_values(array_filter(array_map('trim', explode(',', (string) config_item('paymongo_methods')))));
+        $methods = array_values(array_intersect($methods ?? $configured_methods, $configured_methods));
+        if (!$methods) {
+            throw new RuntimeException('No supported payment methods are enabled for this landlord.');
+        }
         $res = $this->call('POST', '/checkout_sessions', ['data' => ['attributes' => [
             'line_items' => [[
                 'currency'    => 'PHP',

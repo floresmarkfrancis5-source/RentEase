@@ -19,7 +19,7 @@ function storedChoice(accountKey, defaultTheme) {
 }
 
 export function ThemeProvider({ children }) {
-  const { saved } = useSettings()
+  const { saved, setColorMode } = useSettings()
   const { user } = useAuth()
   const accountKey = user?.id ?? 'guest'
   const [choice, setChoice] = useState(() => storedChoice(accountKey, saved.default_theme))
@@ -41,9 +41,10 @@ export function ThemeProvider({ children }) {
     const root = document.documentElement
     root.classList.add('theme-anim')
     root.setAttribute('data-theme', theme)
+    setColorMode(theme)
     const t = setTimeout(() => root.classList.remove('theme-anim'), 450)
     return () => clearTimeout(t)
-  }, [theme])
+  }, [theme, setColorMode])
 
   const toggle = useCallback(() => {
     const next = theme === 'dark' ? 'light' : 'dark'

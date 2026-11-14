@@ -10,7 +10,7 @@ class TenantPortalController extends BaseApiController
     public function __construct()
     {
         parent::__construct();
-        $this->call->model(['Bill_model', 'Payment_model', 'Lease_model', 'Maintenance_model', 'Maintenance_image_model', 'Inapp_notification_model']);
+        $this->call->model(['Bill_model', 'Payment_model', 'Lease_model', 'Maintenance_model', 'Maintenance_image_model', 'Inapp_notification_model', 'Site_setting_model', 'User_model']);
     }
 
     public function summary()
@@ -96,9 +96,20 @@ class TenantPortalController extends BaseApiController
             $this->fail('This bill is already paid.', 409);
         }
 
+        $tenant = $this->User_model->find_by_id($this->uid());
+        $landlord_id = (int) ($tenant['landlord_id'] ?? 0);
+        if ($landlord_id < 1) {
+            $this->fail('Your landlord payment settings are not available.', 503);
+        }
+        $settings = $this->Site_setting_model->get_all($landlord_id);
+        $methods = array_values(array_filter(array_map('trim', explode(',', $settings['payment_methods'] ?? ''))));
+        if (!$methods) {
+            $this->fail('Online payment is not available. Please contact your landlord.', 503);
+        }
+
         $this->Payment_model->cancel_stale_pending($bill['id']);
 
-        // Safe test mode override: when in PayMongo test mode, force amount to 1.00 PHP so only 1 peso is charged
+        // Keep the test checkout amount small; the original bill remains unchanged.
         $chargeAmount = (config_item('paymongo_force_test_piso') && $this->paymongo->mode() === 'test')
             ? 1.00
             : (float) $bill['amount'];
@@ -109,7 +120,8 @@ class TenantPortalController extends BaseApiController
             $co = $this->paymongo->create_checkout(
                 $checkoutBill, $pid,
                 $frontend . '/tenant/bills?payment=' . $pid . '&result=success',
-                $frontend . '/tenant/bills?payment=' . $pid . '&result=cancelled'
+                $frontend . '/tenant/bills?payment=' . $pid . '&result=cancelled',
+                $methods
             );
             $this->Payment_model->set_checkout($pid, $co['id']);
         } catch (Throwable $e) {

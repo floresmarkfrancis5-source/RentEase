@@ -76,32 +76,68 @@ class Payment_model extends Model
     }
 
     /**
-     * Settle a payment: payment -> paid (+ receipt number), bill -> paid.
-     * Idempotent: the UPDATE only touches rows that are not yet paid, so a webhook that is delivered
-     * twice (or a webhook plus a manual verify) settles the payment exactly once.
+     * Settle one pending payment for an unpaid bill.
+     * The bill lock prevents separate checkout attempts from both issuing receipts.
      *
-     * @return bool true when THIS call settled it, false when it was already paid
+     * @return bool true when THIS call settled it, false when it was stale or already settled
      */
     public function settle($payment_id, $reference = null)
     {
         $this->db->transaction();
         try {
+            $payment = $this->db->raw(
+                'SELECT id, bill_id, status FROM payments WHERE id = ? FOR UPDATE',
+                [(int) $payment_id]
+            )->fetch(PDO::FETCH_ASSOC);
+            if (!$payment || $payment['status'] !== 'pending') {
+                $this->db->roll_back();
+                return false;
+            }
+
+            $bill = $this->db->raw(
+                'SELECT id, status FROM bills WHERE id = ? FOR UPDATE',
+                [(int) $payment['bill_id']]
+            )->fetch(PDO::FETCH_ASSOC);
+            if (!$bill) {
+                $this->db->roll_back();
+                return false;
+            }
+            if ($bill['status'] === 'paid') {
+                $this->db->raw(
+                    "UPDATE payments SET status = 'failed' WHERE id = ? AND status = 'pending'",
+                    [(int) $payment['id']]
+                );
+                $this->db->commit();
+                return false;
+            }
+            if (!in_array($bill['status'], ['unpaid', 'overdue'], true)) {
+                $this->db->roll_back();
+                return false;
+            }
+
             $changed = $this->db->raw(
                 "UPDATE payments
                     SET status = 'paid', paid_at = NOW(), paymongo_payment_ref = COALESCE(?, paymongo_payment_ref),
                         receipt_no = CONCAT('RCPT-', DATE_FORMAT(NOW(), '%Y%m%d'), '-', LPAD(id, 5, '0'))
-                  WHERE id = ? AND status <> 'paid'",
+                  WHERE id = ? AND status = 'pending'",
                 [$reference, (int) $payment_id]
             )->rowCount();
 
-            if ($changed) {
-                $this->db->raw(
-                    "UPDATE bills SET status = 'paid', paid_at = NOW() WHERE id = (SELECT bill_id FROM payments WHERE id = ?)",
-                    [(int) $payment_id]
-                );
+            if (!$changed) {
+                $this->db->roll_back();
+                return false;
+            }
+
+            $billChanged = $this->db->raw(
+                "UPDATE bills SET status = 'paid', paid_at = NOW() WHERE id = ? AND status IN ('unpaid', 'overdue')",
+                [(int) $bill['id']]
+            )->rowCount();
+            if (!$billChanged) {
+                $this->db->roll_back();
+                return false;
             }
             $this->db->commit();
-            return $changed > 0;
+            return true;
         } catch (Throwable $e) {
             $this->db->roll_back();
             throw $e;

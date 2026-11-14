@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from '../lib/api'
 import Glass from './Glass'
 import HelpTip from './HelpTip'
@@ -93,23 +94,24 @@ export function Table({ columns, rows, actions }) {
   )
 }
 
-export function Modal({ title, onClose, children }) {
+export function Modal({ title, onClose, children, className = '' }) {
   const { t } = useLanguage()
   useEffect(() => {
     const k = (e) => e.key === 'Escape' && onClose()
     document.addEventListener('keydown', k)
     return () => document.removeEventListener('keydown', k)
   }, [onClose])
-  return (
+  return createPortal(
     <div className="modal" role="dialog" aria-modal="true" aria-label={t(title)} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <Glass className="modal__card">
+      <Glass className={`modal__card${className ? ` ${className}` : ''}`}>
         <div className="modal__head">
           <h2>{t(title)}</h2>
           <button type="button" className="modal__close" onClick={onClose} aria-label={t('Close')}>✕</button>
         </div>
         {children}
       </Glass>
-    </div>
+    </div>,
+    document.body
   )
 }
 

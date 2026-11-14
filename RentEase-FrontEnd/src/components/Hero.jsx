@@ -10,13 +10,14 @@ const FEATS = [
   ['Monthly', 'billing', 'M12 4h24v40l-4-3-4 3-4-3-4 3-4-3-4 3zM18 14h12M18 21h12M18 28h7'],
   ['Pay with', 'GCash & card', 'M4 12h40a2 2 0 0 1 2 2v20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V14a2 2 0 0 1 2-2zM2 20h44M10 29h10'],
   ['Repair', 'requests', 'M30 8a10 10 0 0 0-12 13L6 33l5 5 12-12a10 10 0 0 0 13-12l-6 6-5-1-1-5z'],
+  ['AI rental', 'assistant', 'M8 8h32a4 4 0 0 1 4 4v17a4 4 0 0 1-4 4H20l-10 7v-7H8a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4Zm8 12h.01M24 20h.01M32 20h.01M19 27h10'],
 ]
 
 /**
  * Full-bleed homepage hero. Takes settings as props so the admin page can preview a draft
  * (compact = smaller, no scroll effects; inert = links are not focusable).
  */
-export default function Hero({ s, compact = false, inert = false, play = true, tenant = false, defaultImage = false }) {
+export default function Hero({ s, compact = false, inert = false, play = true, tenant = false, defaultImage = false, marketing = false }) {
   const { t } = useLanguage()
   const root = useRef(null)
   const media = useRef(null)
@@ -54,7 +55,7 @@ export default function Hero({ s, compact = false, inert = false, play = true, t
   }, [compact])
 
   return (
-    <section ref={root} className={`hero${compact ? ' hero--compact' : ''}${play ? ' play' : ''}`}>
+    <section ref={root} className={`hero${compact ? ' hero--compact' : ''}${marketing ? ' hero--marketing' : ''}${play ? ' play' : ''}`}>
       <div className="hero-media" ref={media}>
         {img && imgOk ? (
           <img src={img} alt="" fetchpriority="high" onError={() => setImgOk(false)} />

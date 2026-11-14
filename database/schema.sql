@@ -1,6 +1,6 @@
 -- =====================================================================
---  RentEase schema (MySQL 8 / Aiven). Mirrors the migrations 000-032 in app/migrations.
---  Preferred way: run  php lava migration run  (this file is the manual alternative).
+--  LEGACY SNAPSHOT ONLY: this schema stops at migration 032 and omits current tables/columns.
+--  Do not use it to initialize the current app. Use `php lava migration run` from RentEase-BackEnd.
 -- =====================================================================
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;

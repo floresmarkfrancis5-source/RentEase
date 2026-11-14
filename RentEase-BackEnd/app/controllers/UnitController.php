@@ -29,7 +29,7 @@ class UnitController extends BaseApiController
         $this->api->require_method('GET');
         $this->Lease_model->sync_lifecycle();
         $q    = $this->api->get_query_params();
-        $rows = $this->Unit_model->list_units($q['property_id'] ?? null, $this->uid());
+        $rows = $this->Unit_model->list_units($q['property_id'] ?? null, $this->uid(), ($q['archived'] ?? '') === '1');
         $this->ok(['data' => $rows, 'count' => count($rows)]);
     }
 
@@ -106,35 +106,22 @@ class UnitController extends BaseApiController
     public function destroy($id)
     {
         $this->api->require_method('DELETE');
-        $unit = $this->not_found_unless($this->Unit_model->find($id, $this->uid()), 'Unit');
-
-        // Check if unit is actively occupied
-        $activeLease = $this->db->raw(
-            "SELECT id FROM leases WHERE unit_id = ? AND status IN ('active','scheduled') LIMIT 1",
-            [(int) $id]
-        )->fetch(PDO::FETCH_ASSOC);
-
-        if ($activeLease || $unit['occupancy_status'] === 'occupied') {
-            $this->fail('Cannot delete this unit because it has an active or scheduled move-in. End or cancel the lease first.', 409);
+        $result = $this->Unit_model->archive($id, $this->uid());
+        if ($result === 'not_found') {
+            $this->fail('Unit not found.', 404);
         }
-
-        // Transactional deletion: remove historical references so foreign keys don't block deletion
-        $this->db->transaction();
-        try {
-            $this->db->raw("DELETE FROM unit_transfer_requests WHERE current_unit_id = ? OR requested_unit_id = ?", [(int) $id, (int) $id]);
-            $this->db->raw("DELETE FROM maintenance_images WHERE maintenance_id IN (SELECT id FROM maintenance_requests WHERE unit_id = ?)", [(int) $id]);
-            $this->db->raw("DELETE FROM maintenance_requests WHERE unit_id = ?", [(int) $id]);
-            $this->db->raw("DELETE FROM lease_documents WHERE lease_id IN (SELECT id FROM leases WHERE unit_id = ?)", [(int) $id]);
-            $this->db->raw("DELETE FROM lease_events WHERE lease_id IN (SELECT id FROM leases WHERE unit_id = ?)", [(int) $id]);
-            $this->db->raw("DELETE FROM bills WHERE lease_id IN (SELECT id FROM leases WHERE unit_id = ?)", [(int) $id]);
-            $this->db->raw("DELETE FROM leases WHERE unit_id = ?", [(int) $id]);
-            $this->Unit_model->delete_unit($id);
-            $this->db->commit();
-        } catch (Throwable $e) {
-            $this->db->roll_back();
-            throw $e;
+        if ($result === 'has_current_lease') {
+            $this->fail('End or cancel all active, scheduled, or offered leases before archiving this unit.', 409);
         }
+        $this->ok(['message' => 'Unit archived. Its lease, payment, receipt, maintenance, and transfer history is preserved.']);
+    }
 
-        $this->ok(['message' => "Unit \"{$unit['unit_name']}\" deleted successfully."]);
+    public function restore($id)
+    {
+        $this->api->require_method('POST');
+        if (!$this->Unit_model->restore($id, $this->uid())) {
+            $this->fail('Archived unit not found, or restore its archived property first.', 404);
+        }
+        $this->ok(['message' => 'Unit restored.']);
     }
 }

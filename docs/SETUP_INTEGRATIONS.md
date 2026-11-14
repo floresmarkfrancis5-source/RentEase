@@ -14,16 +14,21 @@ Before deploying landlord registration, apply migration 017 using the normal mig
 
 ### First superadmin and password recovery
 
-Migration 018 creates the `superadmin` role, password-reset token table, and initial superadmin account. Before running it, set these values privately in the backend `.env` or deployment environment. Do not commit them or share the password:
+Migration 018 creates the `superadmin` role, password-reset token table, and initial superadmin account. Before running it, set these values privately in the backend `.env` used by the migration CLI. Do not commit them or share the password:
 
 ```
 SUPERADMIN_BOOTSTRAP_EMAIL=your-admin-email@example.com
 SUPERADMIN_BOOTSTRAP_USERNAME=your-superadmin-username
 SUPERADMIN_BOOTSTRAP_FULL_NAME=Your Name
-SUPERADMIN_BOOTSTRAP_PASSWORD=a-unique-strong-password-at-least-12-characters
+SUPERADMIN_BOOTSTRAP_PASSWORD=<set privately; at least 12 characters with letters and numbers>
 ```
 
-Back up the database, then run `php lava migration run`. Migration 018 validates the bootstrap settings before altering the schema, and creates the first superadmin only if none exists. After it succeeds, remove `SUPERADMIN_BOOTSTRAP_PASSWORD` from the environment. A superadmin can manage landlord accounts, send reset links, and create other superadmins from `/superadmin`; there is no public superadmin signup.
+Replace the placeholders with private values; do not commit them. For a fresh database, migration 018 fails safely
+until all four values are valid. Back up the database, set `MIGRATION_ENABLED=true` for the migration CLI environment,
+then run `php lava migration run` and verify with `php lava migration status`. Migration 018 creates the first
+superadmin only if none exists. After it succeeds, remove `SUPERADMIN_BOOTSTRAP_PASSWORD` from the environment.
+Keep migrations disabled/unset on the deployed web service. A superadmin can manage landlord accounts, send reset
+links, and create other superadmins from `/superadmin`; there is no public superadmin signup.
 
 Email reset links require working SMTP configuration (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`, `MAIL_FROM`) and `FRONTEND_URL`. Links expire after 30 minutes and are single-use.
 
@@ -39,20 +44,29 @@ Email reset links require working SMTP configuration (`SMTP_HOST`, `SMTP_PORT`, 
    FRONTEND_URL=http://localhost:5173
    ```
    `FRONTEND_URL` must match the address of your React app (PayMongo sends the tenant back there).
-4. **Safety lock:** the API refuses any `sk_live_` key unless you also write `PAYMONGO_ALLOW_LIVE=true`. Never set that for the school project, so real money cannot be charged by accident.
+4. **Test-only lock:** the backend accepts only an `sk_test_` key and refuses all live keys, including in production. There is no setting to enable live payments.
 5. Try it: log in as a tenant → **My bills** → **Pay now** → you land on PayMongo's checkout page (it shows a *test mode* notice).
    - **Card:** `4343 4343 4343 4345`, any future expiry date, any 3-digit CVC.
    - **GCash / Maya:** choose it, then press the *success* option on PayMongo's simulated page. No account or money is involved.
 6. After paying you are sent back to RentEase, the bill turns **Paid**, and a receipt PDF becomes available.
 
+Landlords select GCash and/or Maya during first-time setup or later in **Bills → Payment methods**. The tenant bill page shows the landlord's profile name and contact details alongside those options. Checkout still uses the application's PayMongo test account; landlord-specific payout accounts are not connected.
+
 **Webhook (only after you deploy; not needed on localhost).** A webhook lets PayMongo tell your server a payment succeeded even if the tenant closes the tab. Localhost is not reachable from the internet, so locally the app confirms the payment when the tenant returns to the site instead, and that works fine.
 After deploying the API on Render: PayMongo Dashboard → Developers → **Webhooks** → add
 `https://YOUR-API.onrender.com/api/webhooks/paymongo`, event `checkout_session.payment.paid`, then copy the `whsec_...` secret into `PAYMONGO_WEBHOOK_SECRET`.
 
-Note: "Test mode" amounts are fake. Only your **sk_test_** key is ever used, and no card or e-wallet is really charged.
+Note: "Test mode" payments are simulated. The app only accepts **sk_test_** keys, so no card or e-wallet is really charged, including when deployed. Set `PAYMONGO_SECRET_KEY` to a test key in the Render environment; a live key will not be used.
 
 ---
-## 2. PDF receipts and statements
+## 2. Tenant announcements and chat
+
+Migrations 033–038 add landlord announcements, indexed chat conversations/messages, reply references, a Haha message reaction, assistant pending actions and audit logs, and reversible property/unit archiving. The migration files are the authoritative schema; the root `database/schema.sql` snapshot stops at migration 032. Back up the database, then apply pending migrations with `php lava migration run` before using the features locally or on a deployment. Landlords manage announcements in **Settings**; published announcements appear on tenant homepages. Chat is available from the landlord and tenant dashboards, with a shared General room and one-to-one landlord/tenant conversations.
+
+Chat history is loaded in pages of 30 (up to 50 at a time), and only the open conversation refreshes while the chat page is visible. Images are compressed in the browser to 650 KB or less and uploaded to Cloudinary. Configure the existing `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` backend variables (or an upload preset) to enable image sharing. Text chat works without Cloudinary.
+
+---
+## 3. PDF receipts and statements
 
 PDFs are made by the **Dompdf** library. They only need the BackEnd's `vendor` folder:
 ```
@@ -65,7 +79,7 @@ Needs PHP extensions `gd`, `mbstring`, `curl` (all on by default in XAMPP; in `p
 If the download button says "failed", run `composer install` again and check the `runtime` folder is writable.
 
 ---
-## 3. Email reminders and receipts
+## 4. Email reminders and receipts
 
 The app sends mail through any SMTP server. Easiest options:
 

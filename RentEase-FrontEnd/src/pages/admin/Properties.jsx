@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Field, Modal, PageHead, State, Table, clean, useLoad, useToast } from '../../components/ui'
-import { api } from '../../lib/api'
+import { api, dateFmt } from '../../lib/api'
 import PropertyLocationPicker from '../../components/PropertyLocationPicker'
 import { compressImageFile } from '../../components/PhotoLightbox'
 import ViewToolbar from '../../components/ViewToolbar'
+import PropertyPortfolioMap from '../../components/PropertyPortfolioMap'
 import ContractTemplateEditor from '../../components/ContractTemplateEditor'
 import { DEFAULT_LEASE_TEMPLATE, parseLeaseTemplate } from '../../lib/leaseContract'
+import { useLanguage } from '../../context/LanguageContext'
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || ''
 export function MapView({ p, onClose }) {
@@ -26,16 +29,50 @@ export function MapView({ p, onClose }) {
 }
 
 export default function Properties() {
+  const { t } = useLanguage()
   const { data, error, loading, reload } = useLoad('/api/admin/properties')
+  const archived = useLoad('/api/admin/properties?archived=1')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [edit, setEdit] = useState(null) // {} = new, row = editing
   const [map, setMap] = useState(null)
+  const [showPortfolioMap, setShowPortfolioMap] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 600px)').matches)
+  const [openPropertyActions, setOpenPropertyActions] = useState(null)
+  const [showArchived, setShowArchived] = useState(false)
   const [viewMode, setViewMode] = useState('grid') // 'grid' | 'list'
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [sortBy, setSortBy] = useState('name-asc')
   const [toast, flash] = useToast()
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 600px)')
+    const updateViewport = () => setIsMobile(mediaQuery.matches)
+    if (mediaQuery.addEventListener) mediaQuery.addEventListener('change', updateViewport)
+    else mediaQuery.addListener(updateViewport)
+    return () => {
+      if (mediaQuery.removeEventListener) mediaQuery.removeEventListener('change', updateViewport)
+      else mediaQuery.removeListener(updateViewport)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (searchParams.get('action') !== 'add') return
+    setEdit({})
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
+
   const rawProperties = data || []
+  const portfolio = useMemo(() => rawProperties.reduce((summary, property) => {
+    const units = Number(property.units_count || 0)
+    const occupied = Number(property.occupied_count || 0)
+    summary.units += units
+    summary.occupied += occupied
+    return summary
+  }, { units: 0, occupied: 0 }), [rawProperties])
+  const portfolioVacant = Math.max(0, portfolio.units - portfolio.occupied)
+  const portfolioOccupancy = portfolio.units ? Math.round((portfolio.occupied / portfolio.units) * 100) : 0
 
   const filteredProperties = useMemo(() => {
     let result = [...rawProperties]
@@ -77,17 +114,67 @@ export default function Properties() {
     flash(r.message); reload()
   }
   const del = async (p) => {
-    if (!window.confirm(`Delete ${p.name}?`)) return
-    try { flash((await api(`/api/admin/properties/${p.id}`, { method: 'DELETE', auth: true })).message); reload() } catch (e) { flash(e.message, 'bad') }
+    if (!window.confirm(`Archive ${p.name}? Its history will be preserved and can be restored later.`)) return
+    try {
+      flash((await api(`/api/admin/properties/${p.id}`, { method: 'DELETE', auth: true })).message)
+      reload()
+      archived.reload()
+    } catch (e) { flash(e.message, 'bad') }
   }
+  const restore = async (p) => {
+    if (!window.confirm(`Restore ${p.name}? It will return to active property views.`)) return
+    try {
+      flash((await api(`/api/admin/properties/${p.id}/restore`, { method: 'POST', auth: true })).message)
+      reload()
+      archived.reload()
+    } catch (e) { flash(e.message, 'bad') }
+  }
+  const viewUnits = useCallback((property) => {
+    navigate(`/admin/units?property_id=${encodeURIComponent(property.id)}`)
+  }, [navigate])
+  const editProperty = useCallback((property) => setEdit(property), [])
 
   return (
-    <>
+    <div className="admin-properties-page">
       <PageHead eyebrow="Manage" title="Properties" sub="Apartments and boarding houses you rent out.">
         <button className="btn btn--accent" onClick={() => setEdit({})}>+ Add property</button>
+        <button type="button" className="btn btn--ghost" onClick={() => setShowArchived(true)}>
+          {t('Archived')} {archived.data?.length ? `(${archived.data.length})` : ''}
+        </button>
+        {isMobile && rawProperties.length > 0 && (
+          <button type="button" className="btn btn--ghost property-map-trigger" onClick={() => setShowPortfolioMap(true)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15m6-12v15" /></svg>
+            <span>{t('Map view')}</span>
+          </button>
+        )}
       </PageHead>
 
-      <ViewToolbar
+      {data && rawProperties.length > 0 && (
+        <>
+          <section className="property-portfolio-summary" aria-label={t('Portfolio summary')}>
+            <div className="property-portfolio-summary__lead">
+              <strong>{rawProperties.length}</strong>
+              <span>{rawProperties.length === 1 ? t('property') : t('properties')}</span>
+            </div>
+            <span className="property-portfolio-summary__divider" aria-hidden="true" />
+            <div><strong>{portfolio.units}</strong><span>{t('units')}</span></div>
+            <div><strong>{portfolio.occupied}</strong><span>{t('occupied')}</span></div>
+            <div><strong>{portfolioVacant}</strong><span>{t('vacant')}</span></div>
+            <div className="property-portfolio-summary__occupancy">
+              <span>{t('Portfolio occupancy')}</span>
+              <strong>{portfolioOccupancy}%</strong>
+              <div className="property-portfolio-summary__track" role="progressbar"
+                aria-label={t('Portfolio occupancy')} aria-valuemin="0" aria-valuemax="100" aria-valuenow={portfolioOccupancy}>
+                <span style={{ width: `${portfolioOccupancy}%` }} />
+              </div>
+            </div>
+          </section>
+          {!isMobile && <PropertyPortfolioMap properties={rawProperties} onViewUnits={viewUnits} onEdit={editProperty} />}
+        </>
+      )}
+
+      <div className="properties-toolbar">
+        <ViewToolbar
         view={viewMode}
         onViewChange={setViewMode}
         search={search}
@@ -110,16 +197,20 @@ export default function Properties() {
           { value: 'occupied-desc', label: 'Highest Occupancy' },
           { value: 'city-asc', label: 'City (A to Z)' },
         ]}
-      >
-        <span className="muted" style={{ fontSize: '.84rem' }}>
-          {filteredProperties.length} {filteredProperties.length === 1 ? 'property' : 'properties'}
-        </span>
-      </ViewToolbar>
+        >
+          <span className="properties-results-count properties-results-count--toolbar">
+            {filteredProperties.length} {filteredProperties.length === 1 ? t('property') : t('properties')}
+          </span>
+        </ViewToolbar>
+        <p className="properties-results-count properties-results-count--mobile" role="status">
+          {t('Showing')} {filteredProperties.length} {filteredProperties.length === 1 ? t('property') : t('properties')}
+        </p>
+      </div>
 
-      <State loading={loading} error={error} empty={data?.length === 0 && 'No properties yet. Add your first one.'}>
+      <State loading={loading} error={error} empty={data?.length === 0 && t('No properties yet. Add your first one.')}>
         {data && filteredProperties.length === 0 ? (
           <div className="panel" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--page-muted)' }}>
-            No properties match your search and filter criteria.
+            {t('No properties match your search and filter criteria.')}
           </div>
         ) : viewMode === 'grid' ? (
           <div className="cards-grid">
@@ -128,68 +219,73 @@ export default function Properties() {
               const occupiedUnits = Number(p.occupied_count || 0)
               const vacantUnits = Math.max(0, totalUnits - occupiedUnits)
               const addr = [p.address, p.barangay, p.city].filter(Boolean).join(', ')
+              const occupancy = totalUnits ? Math.round((occupiedUnits / totalUnits) * 100) : 0
 
               return (
-                <div key={p.id} className="property-card">
+                <article key={p.id}
+                  className={`property-card${openPropertyActions === p.id ? ' property-card--actions-open' : ''}`}
+                  tabIndex={0} aria-label={`${p.name} ${t('property')}`}>
                   <div className="property-card__img-wrap">
                     {p.image_url ? (
                       <img src={p.image_url} alt={p.name} className="property-card__img" />
                     ) : (
-                      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(255,255,255,0.03), rgba(255,255,255,0.07))', color: 'var(--page-muted)' }}>
-                        <span style={{ fontSize: '2.5rem' }}>🏢</span>
+                      <div className="property-card__placeholder" role="img" aria-label={t('Property photo not added')}>
+                        <svg viewBox="0 0 96 76" aria-hidden="true">
+                          <path d="M17 66V21h26v45M43 32h36v34M10 66h76M26 31h8m-8 9h8m-8 9h8m-8 9h8m19-17h8m-8 10h8m-8 10h8m9-20h8m-8 10h8m-8 10h8" />
+                        </svg>
+                        <span>{t('Property photo not added')}</span>
                       </div>
                     )}
-                    <span
-                      className="tag"
-                      style={{
-                        position: 'absolute',
-                        top: 10,
-                        right: 10,
-                        background: 'rgba(0,0,0,0.65)',
-                        color: '#fff',
-                        backdropFilter: 'blur(6px)',
-                        fontSize: '.75rem',
-                        fontWeight: 600,
-                        padding: '3px 8px',
-                        borderRadius: 6,
+                    <span className="property-card__type">
+                      {p.type === 'boarding_house' ? t('Boarding House') : t('Apartment')}
+                    </span>
+                    <button
+                      type="button"
+                      className="property-card__options-toggle"
+                      aria-expanded={openPropertyActions === p.id}
+                      aria-controls={`property-actions-${p.id}`}
+                      aria-label={`${t(openPropertyActions === p.id ? 'Close' : 'Options')}: ${p.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setOpenPropertyActions((current) => current === p.id ? null : p.id)
                       }}
                     >
-                      {p.type === 'boarding_house' ? 'Boarding House' : 'Apartment'}
-                    </span>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        {openPropertyActions === p.id
+                          ? <path d="m6 6 12 12M18 6 6 18" />
+                          : <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>}
+                      </svg>
+                      <span>{t(openPropertyActions === p.id ? 'Close' : 'Options')}</span>
+                    </button>
+                    <div className="property-card__overlay" id={`property-actions-${p.id}`}>
+                      <span className="property-card__overlay-label">{t('Manage property')}</span>
+                      <div className="property-card__actions">
+                        <button type="button" className="property-card__action property-card__action--primary"
+                          onClick={() => { setOpenPropertyActions(null); viewUnits(p) }}>{t('View units')}</button>
+                        <button type="button" className="property-card__action" onClick={() => { setOpenPropertyActions(null); setEdit(p) }}>{t('Edit')}</button>
+                        <button type="button" className="property-card__action property-card__action--delete"
+                          onClick={() => { setOpenPropertyActions(null); del(p) }}>{t('Archive')}</button>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="property-card__body">
                     <h3 className="property-card__title">{p.name}</h3>
-                    {addr && <p className="property-card__addr">📍 {addr}</p>}
-                    {p.description && (
-                      <p
-                        style={{
-                          fontSize: '.82rem',
-                          color: 'var(--page-muted)',
-                          margin: '0 0 12px',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden',
-                          lineHeight: 1.4,
-                        }}
-                      >
-                        {p.description}
-                      </p>
-                    )}
+                    {addr && <p className="property-card__addr">{addr}</p>}
                     <div className="property-card__stats">
-                      <span>Units: <strong>{totalUnits}</strong></span>
-                      <span>Occupied: <strong>{occupiedUnits}</strong></span>
-                      <span>Vacant: <strong style={{ color: vacantUnits > 0 ? 'var(--emerald, #10b981)' : 'var(--page-muted)' }}>{vacantUnits}</strong></span>
+                      <span><strong>{totalUnits}</strong> {t('units')}</span>
+                      <span><strong>{occupiedUnits}</strong> {t('occupied')}</span>
+                      <span><strong>{vacantUnits}</strong> {t('vacant')}</span>
+                    </div>
+                    <div className="property-card__occupancy">
+                      <span>{occupancy}% {t('occupied')}</span>
+                      <div className="property-card__occupancy-track" role="progressbar"
+                        aria-label={`${p.name} occupancy`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={occupancy}>
+                        <span style={{ width: `${occupancy}%` }} />
+                      </div>
                     </div>
                   </div>
-
-                  <div className="property-card__foot">
-                    <button className="btn btn--ghost btn--sm" onClick={() => setMap(p)}>🗺️ Map</button>
-                    <button className="btn btn--ghost btn--sm" onClick={() => setEdit(p)}>✏️ Edit</button>
-                    <button className="btn btn--ghost btn--sm" style={{ color: 'var(--red, #ef4444)' }} onClick={() => del(p)}>🗑️ Delete</button>
-                  </div>
-                </div>
+                </article>
               )
             })}
           </div>
@@ -208,21 +304,51 @@ export default function Properties() {
               { key: 'name', label: 'Name', render: (r) => <strong>{r.name}</strong> },
               { key: 'type', label: 'Type', render: (r) => r.type === 'boarding_house' ? 'Boarding house' : 'Apartment' },
               { key: 'address', label: 'Address', render: (r) => [r.address, r.barangay, r.city].filter(Boolean).join(', ') },
-              { key: 'units', label: 'Occupied', render: (r) => `${r.occupied_count}/${r.units_count}` },
+              { key: 'units', label: 'Occupied / units', render: (r) => `${r.occupied_count}/${r.units_count}` },
             ]}
             actions={(r) => (
               <>
                 <button className="btn btn--ghost btn--sm" onClick={() => setMap(r)}>Map</button>
                 <button className="btn btn--ghost btn--sm" onClick={() => setEdit(r)}>Edit</button>
-                <button className="btn btn--ghost btn--sm" onClick={() => del(r)}>Delete</button>
+                <button className="btn btn--ghost btn--sm" onClick={() => del(r)}>{t('Archive')}</button>
               </>
             )} />
         )}
       </State>
       {edit && <PropertyForm key={edit.id || 'new'} property={edit} onSubmit={save} onClose={() => setEdit(null)} />}
       {map && <MapView p={map} onClose={() => setMap(null)} />}
+      {showPortfolioMap && (
+        <Modal title="Portfolio map" onClose={() => setShowPortfolioMap(false)} className="property-map-modal">
+          <PropertyPortfolioMap
+            properties={rawProperties}
+            onViewUnits={viewUnits}
+            onEdit={(property) => {
+              setShowPortfolioMap(false)
+              editProperty(property)
+            }}
+          />
+        </Modal>
+      )}
+      {showArchived && (
+        <Modal title="Archived properties" onClose={() => setShowArchived(false)}>
+          <State loading={archived.loading} error={archived.error} empty={archived.data?.length === 0 && t('No archived properties.')}>
+            {archived.data && (
+              <Table rows={archived.data}
+                columns={[
+                  { key: 'name', label: 'Name', render: (p) => <strong>{p.name}</strong> },
+                  { key: 'address', label: 'Address', render: (p) => [p.address, p.barangay, p.city].filter(Boolean).join(', ') },
+                  { key: 'units_count', label: 'Units', render: (p) => p.units_count },
+                  { key: 'archived_at', label: 'Archived on', render: (p) => dateFmt(p.archived_at) },
+                ]}
+                actions={(p) => (
+                  <button type="button" className="btn btn--accent btn--sm" onClick={() => restore(p)}>{t('Restore')}</button>
+                )} />
+            )}
+          </State>
+        </Modal>
+      )}
       {toast}
-    </>
+    </div>
   )
 }
 

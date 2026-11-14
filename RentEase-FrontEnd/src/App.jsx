@@ -9,6 +9,7 @@ import { LoadingHouse } from './components/ui'
 
 const AdminBills = lazy(() => import('./pages/admin/Bills'))
 const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'))
+const Chats = lazy(() => import('./pages/Chats'))
 const AdminAssistant = lazy(() => import('./pages/admin/Assistant'))
 const AdminLeases = lazy(() => import('./pages/admin/Leases'))
 const AdminMaintenance = lazy(() => import('./pages/admin/Maintenance'))
@@ -35,8 +36,10 @@ const TenantTransfers = lazy(() => import('./pages/tenant/Transfers'))
 
 export default function App() {
   const { pathname } = useLocation()
-  const bleed = pathname === '/' || pathname === '/login' || pathname === '/register' // full-width pages (hero / split auth)
+  const bleed = pathname === '/' || pathname === '/login' || pathname === '/register' || pathname === '/onboarding' // full-width pages (hero / split auth / setup)
   const isDash = pathname.startsWith('/admin') || pathname.startsWith('/tenant')
+  const isChatPage = pathname === '/admin/chats' || pathname === '/tenant/chats'
+  const isChatWorkspace = isChatPage || pathname === '/admin/assistant'
 
   return (
     <>
@@ -47,7 +50,7 @@ export default function App() {
       </div>
       <PageMotion />
       <Header />
-      <main className={bleed ? 'main-bleed' : isDash ? 'main-dash' : 'page'}>
+      <main className={bleed ? 'main-bleed' : isDash ? `main-dash${isChatWorkspace ? ' main-dash--chat' : ''}` : 'page'}>
         <Suspense fallback={<LoadingHouse label="Opening your page…" className="loading-house--route" />}>
           <Routes>
             <Route path="/" element={<Home />} />
@@ -66,6 +69,7 @@ export default function App() {
               <Route path="properties" element={<AdminProperties />} />
               <Route path="units" element={<AdminUnits />} />
               <Route path="tenants" element={<AdminTenants />} />
+              <Route path="chats" element={<Chats />} />
               <Route path="leases" element={<AdminLeases />} />
               <Route path="bills" element={<AdminBills />} />
               <Route path="payments" element={<AdminPayments />} />
@@ -79,6 +83,7 @@ export default function App() {
             <Route path="/tenant" element={<ProtectedRoute role="tenant"><DashLayout role="tenant" /></ProtectedRoute>}>
               <Route index element={<TenantOverview />} />
               <Route path="bills" element={<TenantBills />} />
+              <Route path="chats" element={<Chats />} />
               <Route path="maintenance" element={<TenantMaintenance />} />
               <Route path="transfers" element={<TenantTransfers />} />
             </Route>
@@ -88,7 +93,7 @@ export default function App() {
           </Routes>
         </Suspense>
       </main>
-      {pathname !== '/login' && <Footer />}
+      {pathname !== '/login' && !isDash && !isChatPage && <Footer />}
     </>
   )
 }

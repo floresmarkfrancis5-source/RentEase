@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api'
 import { readableOn, rgbTriplet } from '../lib/color'
+import { paletteColors } from '../lib/colorPresets'
 import { useAuth } from './AuthContext'
 
 export const DEFAULT_SETTINGS = {
@@ -24,6 +25,7 @@ export const DEFAULT_SETTINGS = {
   billing_prorate_first_month: '1',
   billing_grace_period_days: '3',
   billing_late_fee: '0.00',
+  payment_methods: 'gcash,paymaya',
 }
 
 const CACHE_KEY = 'rentease-settings'
@@ -34,17 +36,18 @@ function readCache(ownerId) {
 }
 
 /** Apply the signed-in landlord's appearance without changing RentEase branding. */
-export function applySettings(s) {
+export function applySettings(s, mode = 'light') {
+  const colors = paletteColors(s, mode)
   const root = document.documentElement.style
-  root.setProperty('--accent', s.accent_color)
-  root.setProperty('--accent-rgb', rgbTriplet(s.accent_color))
-  root.setProperty('--on-accent', readableOn(s.accent_color))
-  root.setProperty('--header-color', s.header_color)
-  root.setProperty('--header-rgb', rgbTriplet(s.header_color))
-  root.setProperty('--on-header', readableOn(s.header_color))
-  root.setProperty('--hero-from', s.hero_color_from)
-  root.setProperty('--hero-to', s.hero_color_to)
-  root.setProperty('--on-hero', readableOn(s.hero_color_from, s.hero_color_to))
+  root.setProperty('--accent', colors.accent_color)
+  root.setProperty('--accent-rgb', rgbTriplet(colors.accent_color))
+  root.setProperty('--on-accent', readableOn(colors.accent_color))
+  root.setProperty('--header-color', colors.header_color)
+  root.setProperty('--header-rgb', rgbTriplet(colors.header_color))
+  root.setProperty('--on-header', readableOn(colors.header_color))
+  root.setProperty('--hero-from', colors.hero_color_from)
+  root.setProperty('--hero-to', colors.hero_color_to)
+  root.setProperty('--on-hero', readableOn(colors.hero_color_from, colors.hero_color_to))
   root.setProperty('--glass-blur', `${Number(s.glass_blur) || 0}px`)
   root.setProperty('--glass-opacity', String(Number(s.glass_opacity) || 55))
 
@@ -62,10 +65,11 @@ export function SettingsProvider({ children }) {
   const [saved, setSaved] = useState(() => readCache(ownerId))
   const [preview, setPreview] = useState(null) // unsaved draft from the admin form
   const [ready, setReady] = useState(false)
+  const [colorMode, setColorMode] = useState(() => document.documentElement.getAttribute('data-theme') || 'light')
 
   const effective = useMemo(() => (preview ? { ...saved, ...preview } : saved), [saved, preview])
 
-  useEffect(() => { applySettings(effective) }, [effective])
+  useEffect(() => { applySettings(effective, colorMode) }, [effective, colorMode])
 
   const commit = useCallback((next) => {
     const merged = { ...DEFAULT_SETTINGS, ...next }
@@ -93,8 +97,8 @@ export function SettingsProvider({ children }) {
   }, [ownerId, commit])
 
   const value = useMemo(
-    () => ({ settings: effective, saved, ready, setPreview, commit }),
-    [effective, saved, ready, commit],
+    () => ({ settings: effective, saved, ready, setPreview, commit, setColorMode }),
+    [effective, saved, ready, commit, setColorMode],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

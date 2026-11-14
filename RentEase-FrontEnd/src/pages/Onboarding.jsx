@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Glass from '../components/Glass'
 import { Field } from '../components/ui'
@@ -8,6 +8,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useSettings } from '../context/SettingsContext'
 import { api } from '../lib/api'
 import ContractTemplateEditor from '../components/ContractTemplateEditor'
+import AssistantAvatar from '../components/AssistantAvatar'
 import { billingStartDateError } from '../components/LeaseBillingFields'
 import { DEFAULT_LEASE_TEMPLATE, annualEndDate, billingDefaultMoveInDate, defaultMoveInDate, parseLeaseTemplate } from '../lib/leaseContract'
 
@@ -22,8 +23,8 @@ const blankTenant = (unitIndex = 0, unit = {}, billingStyle = 'calendar', billin
 
 export default function Onboarding() {
   const { t } = useLanguage()
-  const { saved: settings } = useSettings()
-  const { updateUser } = useAuth()
+  const { saved: settings, commit } = useSettings()
+  const { user, updateUser } = useAuth()
   const navigate = useNavigate()
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -37,6 +38,14 @@ export default function Onboarding() {
   const [units, setUnits] = useState([{ unit_name: 'Unit 101', monthly_rent: '', default_deposit: '0', default_due_day: '5', capacity: '1', condition_tag: 'good_condition' }])
   const [addTenants, setAddTenants] = useState(false)
   const [tenants, setTenants] = useState([])
+  const [paymentMethods, setPaymentMethods] = useState(['gcash', 'paymaya'])
+  const [paymentMethodsTouched, setPaymentMethodsTouched] = useState(false)
+
+  useEffect(() => {
+    if (!paymentMethodsTouched) {
+      setPaymentMethods(String(settings.payment_methods || 'gcash,paymaya').split(',').filter(Boolean))
+    }
+  }, [settings.payment_methods, paymentMethodsTouched])
 
   const unitMinimum = tenants.reduce((n, tenant) => Math.max(n, Number(tenant.unit_index) + 1), 1)
   const eligibleUnits = units.map((unit, index) => ({ ...unit, index }))
@@ -157,6 +166,12 @@ export default function Onboarding() {
     setBusy(true)
     setError('')
     try {
+      const settingsResult = await api('/api/admin/settings', {
+        method: 'PUT',
+        auth: true,
+        body: { payment_methods: paymentMethods },
+      })
+      commit(settingsResult.data)
       const result = await api('/api/admin/onboarding', {
         method: 'POST',
         auth: true,
@@ -182,22 +197,35 @@ export default function Onboarding() {
   }
 
   return (
-    <section className="onboarding">
+    <section className="onboarding onboarding--welcome">
       <div className="onboarding__top">
         <div>
-          <p className="eyebrow">{t('First-time setup')}</p>
+          <p className="eyebrow">{t('Your RentEase setup')}</p>
           <h1 className="page-title">{t('Let’s get your rental started.')}</h1>
-          <p className="page-sub">{t('A few steps to add a property. You can skip this and manage everything manually later.')}</p>
+          <p className="page-sub">{t('A few simple steps to bring your rental into one place. You can change these details later.')}</p>
         </div>
-        <button type="button" className="btn btn--ghost" disabled={busy} onClick={skip}>{t('Skip setup')}</button>
+        <div className="onboarding__welcome-side">
+          <div className="onboarding__guide" role="note">
+            <AssistantAvatar thinking={busy} className="assistant-avatar--onboarding" />
+            <div>
+              <strong>{busy ? t('Setting things up') : t('Your setup guide')}</strong>
+              <p>{busy ? t('Creating your rental workspace…') : t('We’ll take this one step at a time. It only takes a few minutes.')}</p>
+            </div>
+          </div>
+          <button type="button" className="btn btn--ghost" disabled={busy} onClick={skip}>{t('Skip setup')}</button>
+        </div>
       </div>
       <Glass className="onboarding__card">
         <div className="onboarding__steps" aria-label={t('Setup steps')}>
-          {['Property', 'Units', 'Tenants', 'Review'].map((label, index) => (
-            <span key={label} className={index === step ? 'onboarding__step is-active' : index < step ? 'onboarding__step is-done' : 'onboarding__step'}>
-              <b>{index + 1}</b> {t(label)}
+          {['Property', 'Units', 'Tenants', 'Payment & review'].map((label, index) => (
+            <span key={label} aria-current={index === step ? 'step' : undefined}
+              className={index === step ? 'onboarding__step is-active' : index < step ? 'onboarding__step is-done' : 'onboarding__step'}>
+              <b>{index < step ? '✓' : index + 1}</b> {t(label)}
             </span>
           ))}
+        </div>
+        <div className="onboarding__progress" role="progressbar" aria-label={t('Setup progress')} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(((step + 1) / 4) * 100)}>
+          <span style={{ width: `${((step + 1) / 4) * 100}%` }} />
         </div>
 
         {step === 0 && (
@@ -327,15 +355,46 @@ export default function Onboarding() {
             <h3>{addTenants ? `${tenants.length} ${t('tenant accounts and leases')}` : t('No tenants yet')}</h3>
             {addTenants && <ul>{tenants.map((tenant, index) => <li key={index}>{tenant.full_name} → {units[Number(tenant.unit_index)]?.unit_name}</li>)}</ul>}
             {addTenants && <p className="muted">{t('Temporary tenant passwords will be shown once after setup. Copy them and share them privately.')}</p>}
+            <div className="panel stack">
+              <h3>{t('Payment setup')}</h3>
+              <p className="muted">{t('Tenants will see your account contact details and the payment methods you select.')}</p>
+              <p><strong>{user?.full_name || t('Landlord')}</strong></p>
+              <p>{user?.email || t('Email not provided')}</p>
+              <p>{user?.phone || t('Add a phone number in your profile to display it to tenants.')}</p>
+              <div className="onboarding__choice">
+                {[
+                  { value: 'gcash', label: 'GCash' },
+                  { value: 'paymaya', label: 'Maya' },
+                ].map((method) => (
+                  <label className="field" key={method.value} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input
+                      type="checkbox"
+                      checked={paymentMethods.includes(method.value)}
+                      onChange={(event) => {
+                        setPaymentMethodsTouched(true)
+                        setPaymentMethods((current) => event.target.checked
+                          ? [...new Set([...current, method.value])]
+                          : current.filter((value) => value !== method.value))
+                      }}
+                    />
+                    <span>{t(method.label)}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
         {error && <p className="alert alert--error" role="alert">{error}</p>}
         <div className="onboarding__actions">
+          <span className="onboarding__step-hint">{t('Step')} {step + 1} {t('of')} 4</span>
           <button type="button" className="btn btn--ghost" disabled={busy || step === 0} onClick={() => { setError(''); setStep((current) => current - 1) }}>{t('Back')}</button>
           {step < 3
             ? <button type="button" className="btn btn--accent" disabled={busy} onClick={next}>{t('Continue')}</button>
-            : <button type="button" className="btn btn--accent" disabled={busy} onClick={save}>{busy ? t('Saving setup…') : t('Create my rental setup')}</button>}
+            : <button type="button" className="btn btn--accent onboarding__save" disabled={busy} onClick={save}>
+              {busy && <AssistantAvatar thinking className="assistant-avatar--onboarding-save" />}
+              {busy ? t('Saving setup…') : t('Create my rental setup')}
+            </button>}
         </div>
       </Glass>
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Modal, PageHead, State, StatusPill, Table, useLoad, useToast } from '../../components/ui'
-import { api, dateFmt, downloadPdf, money } from '../../lib/api'
+import { api, dateFmt, downloadPdf, fetchPdf, money } from '../../lib/api'
 import ViewToolbar from '../../components/ViewToolbar'
 
 export default function Bills() {
@@ -14,7 +14,20 @@ export default function Bills() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sortBy, setSortBy] = useState('month-desc')
+  const [paymentSetup, setPaymentSetup] = useState(null)
   const handled = useRef(false)
+
+  useEffect(() => {
+    let alive = true
+    api('/api/my/settings', { auth: true })
+      .then((r) => {
+        if (alive) setPaymentSetup({ landlord: r.landlord, methods: String(r.data?.payment_methods || '').split(',').filter(Boolean) })
+      })
+      .catch((e) => {
+        if (alive) setPaymentSetup({ error: e.message, methods: [] })
+      })
+    return () => { alive = false }
+  }, [])
 
   // Returning from PayMongo: ask the API to confirm the payment (covers a late webhook).
   useEffect(() => {
@@ -28,7 +41,7 @@ export default function Bills() {
       .then((r) => {
         const ok = r.data?.status === 'paid'
         flash(
-          ok ? `✅ Payment received. Receipt: ${r.data.receipt_no}` : '⏳ Payment is still processing. Refresh in a moment.',
+          ok ? `Payment received. Receipt: ${r.data.receipt_no}` : 'Payment is still processing. Refresh in a moment.',
           ok ? 'ok' : 'warn',
         )
         reload()
@@ -52,6 +65,7 @@ export default function Bills() {
       .catch((e) => flash(e.message, 'bad'))
 
   const rawBills = data || []
+  const canPayOnline = !!paymentSetup && !paymentSetup.error && paymentSetup.methods.length > 0
 
   // Filter + sort
   const filteredBills = useMemo(() => {
@@ -68,7 +82,9 @@ export default function Bills() {
       )
     }
 
-    if (statusFilter !== 'all') {
+    if (statusFilter === 'outstanding') {
+      result = result.filter((b) => b.status !== 'paid')
+    } else if (statusFilter !== 'all') {
       result = result.filter((b) => b.status === statusFilter)
     }
 
@@ -85,36 +101,78 @@ export default function Bills() {
   }, [rawBills, search, statusFilter, sortBy])
 
   // Summary from the loaded bills
-  const totalDue = rawBills.filter((b) => b.status !== 'paid').reduce((s, b) => s + Number(b.amount), 0)
-  const overdueCount = rawBills.filter((b) => b.status === 'overdue').length
-  const nextDue = rawBills.filter((b) => b.status !== 'paid').sort((a, b) => a.due_date?.localeCompare(b.due_date ?? ''))[0]
+  const unpaidBills = rawBills.filter((b) => b.status !== 'paid')
+  const totalDue = unpaidBills.reduce((s, b) => s + Number(b.amount), 0)
+  const overdueBills = rawBills.filter((b) => b.status === 'overdue')
+  const overdueCount = overdueBills.length
+  const overdueTotal = overdueBills.reduce((sum, bill) => sum + Number(bill.amount || 0), 0)
+  const nextDue = [...unpaidBills].sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''))[0]
   const unpaidCount = rawBills.filter((b) => b.status === 'unpaid').length
+  const paidCount = rawBills.filter((b) => b.status === 'paid').length
 
   return (
     <>
-      <PageHead eyebrow="My rent" title="My Bills" sub="Bills show rent you owe. Pay online with GCash or Maya; a confirmed payment appears in Payments with a receipt." />
+      <PageHead eyebrow="My rent" title="My Bills" sub="See what is due, pay online when available, and keep your statements and receipts together." />
+      {paymentSetup?.error ? (
+        <p className="alert alert--error" role="alert">{paymentSetup.error}</p>
+      ) : paymentSetup && (
+        <details className="bills-payment-help">
+          <summary>
+            <span><strong>Payment help</strong><small>{paymentSetup.methods.length ? `Online payment available: ${paymentSetup.methods.map((method) => method === 'paymaya' ? 'Maya' : 'GCash').join(', ')}` : 'Check with your landlord for payment options'}</small></span>
+          </summary>
+          <div className="bills-payment-help__body">
+            <div>
+              <strong>{paymentSetup.landlord?.full_name || 'Your landlord'}</strong>
+              {paymentSetup.landlord?.email && <span>{paymentSetup.landlord.email}</span>}
+              {paymentSetup.landlord?.phone && <span>{paymentSetup.landlord.phone}</span>}
+            </div>
+            <div className="bills-payment-help__methods">
+              <span className="bills-payment-help__label">Available online methods</span>
+              {paymentSetup.methods.length ? paymentSetup.methods.map((method) => (
+                <span className="tag" key={method}>{method === 'paymaya' ? 'Maya' : 'GCash'}</span>
+              )) : <span className="muted">No online payment method is currently available. Contact your landlord to arrange payment.</span>}
+            </div>
+          </div>
+        </details>
+      )}
 
-      {/* Quick-glance summary */}
+      {nextDue ? (
+        <section className={`tenant-bills-next${nextDue.status === 'overdue' ? ' tenant-bills-next--overdue' : ''}`} aria-label="Next bill to pay">
+          <div className="tenant-bills-next__copy">
+            <span className="tenant-bills-next__eyebrow">{nextDue.status === 'overdue' ? 'Overdue bill' : 'Next bill to pay'}</span>
+            <h2>{nextDue.description || nextDue.period_month || 'Rent bill'}</h2>
+            <p>{nextDue.period_month} <span aria-hidden="true">·</span> Due {dateFmt(nextDue.due_date)} <StatusPill value={nextDue.status} /></p>
+            <strong className="tenant-bills-next__amount">{money(nextDue.amount)}</strong>
+          </div>
+          {canPayOnline
+            ? <button className="btn btn--accent" disabled={busy === nextDue.id} onClick={() => pay(nextDue)}>{busy === nextDue.id ? 'Opening secure checkout…' : 'Pay now'}</button>
+            : <span className="tenant-bills-next__payment-note">Contact your landlord to arrange payment.</span>}
+        </section>
+      ) : data?.length > 0 ? (
+        <section className="tenant-bills-next tenant-bills-next--paid" aria-label="Payment status">
+          <div className="tenant-bills-next__copy">
+            <span className="tenant-bills-next__eyebrow">Payment status</span>
+            <h2>All caught up</h2>
+            <p>You have no outstanding bills right now.</p>
+          </div>
+        </section>
+      ) : null}
+
       {data && data.length > 0 && (
-        <div className="bill-stats">
-          {totalDue > 0 ? (
-            <div className={`bill-stat ${overdueCount > 0 ? 'bill-stat--bad' : 'bill-stat--warn'}`}>
-              <span className="bill-stat__label">{overdueCount > 0 ? '⚠ Total outstanding (includes overdue)' : 'Total outstanding'}</span>
-              <span className="bill-stat__value">{money(totalDue)}</span>
-            </div>
-          ) : (
-            <div className="bill-stat bill-stat--good">
-              <span className="bill-stat__label">✅ All paid — you are up to date!</span>
-              <span className="bill-stat__value">{money(0)}</span>
-            </div>
-          )}
-          {nextDue && (
-            <div className="bill-stat">
-              <span className="bill-stat__label">Next due date</span>
-              <span className="bill-stat__value" style={{ fontSize: '1.2rem' }}>{dateFmt(nextDue.due_date)}</span>
-            </div>
-          )}
-        </div>
+        <section className="tenant-bills-summary" aria-label="Bill status summary">
+          <button type="button" className={`tenant-bills-summary__item tenant-bills-summary__item--outstanding${statusFilter === 'outstanding' ? ' is-active' : ''}`}
+            onClick={() => setStatusFilter(statusFilter === 'outstanding' ? 'all' : 'outstanding')} aria-pressed={statusFilter === 'outstanding'}>
+            <span>Total outstanding</span><strong>{money(totalDue)}</strong><small>{unpaidBills.length} unpaid or overdue</small>
+          </button>
+          <button type="button" className={`tenant-bills-summary__item tenant-bills-summary__item--overdue${statusFilter === 'overdue' ? ' is-active' : ''}`}
+            onClick={() => setStatusFilter(statusFilter === 'overdue' ? 'all' : 'overdue')} aria-pressed={statusFilter === 'overdue'}>
+            <span>Overdue</span><strong>{money(overdueTotal)}</strong><small>{overdueCount} {overdueCount === 1 ? 'bill' : 'bills'}</small>
+          </button>
+          <button type="button" className={`tenant-bills-summary__item tenant-bills-summary__item--paid${statusFilter === 'paid' ? ' is-active' : ''}`}
+            onClick={() => setStatusFilter(statusFilter === 'paid' ? 'all' : 'paid')} aria-pressed={statusFilter === 'paid'}>
+            <span>Paid</span><strong>{paidCount}</strong><small>View paid bills</small>
+          </button>
+        </section>
       )}
 
       <ViewToolbar
@@ -127,6 +185,7 @@ export default function Bills() {
         onFilterChange={setStatusFilter}
         filterOptions={[
           { value: 'all', label: `All Bills (${rawBills.length})` },
+          { value: 'outstanding', label: `Outstanding (${unpaidBills.length})` },
           { value: 'unpaid', label: `Unpaid (${unpaidCount})` },
           { value: 'overdue', label: `Overdue (${overdueCount})` },
           { value: 'paid', label: 'Paid' },
@@ -144,57 +203,50 @@ export default function Bills() {
 
       <State loading={loading} error={error} empty={data?.length === 0 && 'No bills yet. Your landlord will generate bills each month.'}>
         {data && filteredBills.length === 0 ? (
-          <div className="panel" style={{ textAlign: 'center', padding: '36px 20px', color: 'var(--page-muted)' }}>
-            No bills match your search and filter criteria.
+          <div className="tenant-bills-empty">
+            <strong>No bills match these filters</strong>
+            <span>Try a different status or clear your search to see more bills.</span>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => { setSearch(''); setStatusFilter('all') }}>Clear filters</button>
           </div>
         ) : viewMode === 'grid' ? (
-          <div className="cards-grid">
+          <div className="cards-grid bills-cards-grid">
             {filteredBills.map((r) => (
-              <div key={r.id} className="request-card">
+              <article key={r.id} className={`request-card tenant-bill-card${r.status === 'overdue' ? ' tenant-bill-card--overdue' : r.status === 'paid' ? ' tenant-bill-card--paid' : ''}`}>
                 <div className="request-card__head">
-                  <div>
+                  <div className="tenant-bill-card__identity">
                     <h3 className="request-card__title">{r.period_month}</h3>
                     <div className="request-card__sub">{r.description || 'Monthly rent'}</div>
                   </div>
                   <StatusPill value={r.status} />
                 </div>
 
-                <div style={{ background: 'var(--page-bg)', padding: '12px 14px', borderRadius: 8, border: '1px solid var(--page-line)' }}>
-                  <div style={{ fontSize: '1.35rem', fontWeight: 800, color: r.status === 'paid' ? 'var(--emerald, #10b981)' : 'var(--accent, #6366f1)' }}>
-                    {money(r.amount)}
-                  </div>
-                  {Number(r.late_fee_amount) > 0 && (
-                    <small className="muted">Includes {money(r.late_fee_amount)} late fee</small>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, fontSize: '.84rem' }}>
-                    <span className="muted">Due: <strong>{dateFmt(r.due_date)}</strong></span>
-                    {r.status === 'overdue' && (
-                      <span style={{ color: 'var(--danger)', fontWeight: 700, fontSize: '.8rem' }}>⚠ Overdue!</span>
-                    )}
-                  </div>
-                  {r.notes && (
-                    <div style={{ marginTop: 6, fontSize: '.8rem', color: 'var(--page-muted)', fontStyle: 'italic' }}>
-                      {r.notes}
-                    </div>
-                  )}
+                <div className="tenant-bill-card__summary">
+                  <strong className="tenant-bill-card__amount">{money(r.amount)}</strong>
+                  {Number(r.late_fee_amount) > 0 && <small className="muted">Includes {money(r.late_fee_amount)} late fee</small>}
+                  <div className="tenant-bill-card__due"><span>Due {dateFmt(r.due_date)}</span>{r.status === 'overdue' && <strong>Overdue</strong>}</div>
+                  {r.notes && <details className="tenant-bill-card__notes"><summary>Note from landlord</summary><p>{r.notes}</p></details>}
                 </div>
 
-                <div className="request-card__foot">
-                  <button className="btn btn--ghost btn--sm" onClick={() => setDetail(r)}>Details</button>
-                  {r.status !== 'paid' && (
+                <div className="request-card__foot tenant-bill-card__foot">
+                  {r.status !== 'paid' && canPayOnline && (
                     <button
                       className="btn btn--accent btn--sm"
                       disabled={busy === r.id}
                       onClick={() => pay(r)}
                     >
-                      {busy === r.id ? 'Redirecting…' : '💳 Pay now'}
+                      {busy === r.id ? 'Opening checkout…' : 'Pay now'}
                     </button>
                   )}
-                  <button className="btn btn--ghost btn--sm" onClick={() => statement(r)}>
-                    {r.status === 'paid' ? '📄 Download statement' : '📄 Download bill'}
-                  </button>
+                  {r.status !== 'paid' && !canPayOnline && <span className="tenant-bill-card__payment-note">Contact landlord to pay</span>}
+                  <details className="bill-action-menu">
+                    <summary>More</summary>
+                    <div className="bill-action-menu__items">
+                      <button type="button" onClick={() => statement(r)}>{r.status === 'paid' ? 'Download statement' : 'Download bill'}</button>
+                    </div>
+                  </details>
+                  <button className="btn btn--ghost btn--sm" onClick={() => setDetail(r)}>Details</button>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         ) : (
@@ -229,7 +281,7 @@ export default function Bills() {
             actions={(r) => (
               <>
                 <button className="btn btn--ghost btn--sm" onClick={() => setDetail(r)}>Details</button>
-                {r.status !== 'paid' && (
+                {r.status !== 'paid' && canPayOnline && (
                   <button
                     className="btn btn--accent btn--sm"
                     disabled={busy === r.id}
@@ -247,7 +299,7 @@ export default function Bills() {
         )}
       </State>
 
-      <Receipts flash={flash} />
+      <Receipts />
 
       {detail && <BillDetailModal bill={detail} onClose={() => setDetail(null)} onPay={pay} busy={busy} flash={flash} />}
       {toast}
@@ -255,32 +307,110 @@ export default function Bills() {
   )
 }
 
-function Receipts({ flash }) {
-  const { data } = useLoad('/api/my/payments')
-  if (!data?.length) return null
+function Receipts() {
+  const { data, error, loading } = useLoad('/api/my/payments')
+  const [receiptPreview, setReceiptPreview] = useState(null)
+  const receiptRequest = useRef(null)
+
+  useEffect(() => {
+    const url = receiptPreview?.url
+    return () => {
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [receiptPreview?.url])
+
+  async function previewReceipt(payment) {
+    const requestId = `${payment.id}-${Date.now()}`
+    receiptRequest.current = requestId
+    setReceiptPreview({ payment, url: '', loading: true, error: '' })
+    try {
+      const blob = await fetchPdf(`/api/payments/${payment.id}/receipt`)
+      const url = URL.createObjectURL(blob)
+      if (receiptRequest.current !== requestId) {
+        URL.revokeObjectURL(url)
+        return
+      }
+      setReceiptPreview({ payment, url, loading: false, error: '' })
+    } catch (previewError) {
+      if (receiptRequest.current === requestId) {
+        setReceiptPreview({ payment, url: '', loading: false, error: previewError.message || 'The receipt preview could not be loaded.' })
+      }
+    }
+  }
+
+  function closePreview() {
+    receiptRequest.current = null
+    setReceiptPreview(null)
+  }
+
+  function downloadReceipt() {
+    if (!receiptPreview?.url) return
+    const link = Object.assign(document.createElement('a'), {
+      href: receiptPreview.url,
+      download: `${receiptPreview.payment.receipt_no || 'payment-receipt'}.pdf`,
+    })
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
   return (
-    <>
-      <h2 className="panel__title" style={{ margin: '36px 0 14px' }}>Receipts</h2>
-      <p className="muted">These are confirmed payments received for your bills. Pending checkouts are not receipts.</p>
-      <Table
-        rows={data}
-        columns={[
-          { key: 'receipt_no', label: 'Receipt', render: (r) => <strong>{r.receipt_no}</strong> },
-          { key: 'bill_description', label: 'For' },
-          { key: 'amount', label: 'Amount', align: 'right', render: (r) => money(r.amount) },
-          { key: 'method', label: 'Method', render: (r) => r.method?.replace('_', ' ') || '—' },
-          { key: 'paid_at', label: 'Paid', render: (r) => dateFmt(r.paid_at) },
-        ]}
-        actions={(r) => (
-          <button
-            className="btn btn--ghost btn--sm"
-            onClick={() => downloadPdf(`/api/payments/${r.id}/receipt`, `${r.receipt_no}.pdf`).catch((e) => flash(e.message, 'bad'))}
-          >
-            Download receipt
-          </button>
-        )}
-      />
-    </>
+    <section className="tenant-receipts" aria-labelledby="tenant-receipts-title">
+      <div className="tenant-receipts__head">
+        <div>
+          <h2 id="tenant-receipts-title">Receipts</h2>
+          <p>Receipts are available for confirmed payments. Preview one before downloading it.</p>
+        </div>
+      </div>
+      {loading && <p className="muted" role="status">Loading your receipts…</p>}
+      {error && <p className="alert alert--error" role="alert">Receipts could not be loaded: {error}</p>}
+      {!loading && !error && !data?.length && <p className="tenant-receipts__empty">No confirmed payments yet. Your receipts will appear here after a payment is complete.</p>}
+      {!loading && !error && !!data?.length && (
+        <Table
+          rows={data}
+          columns={[
+            { key: 'receipt_no', label: 'Receipt', render: (r) => <strong>{r.receipt_no}</strong> },
+            { key: 'bill_description', label: 'For' },
+            { key: 'amount', label: 'Amount', align: 'right', render: (r) => money(r.amount) },
+            { key: 'method', label: 'Method', render: (r) => (r.method || '—').replace(/_/g, ' ') },
+            { key: 'paid_at', label: 'Paid', render: (r) => dateFmt(r.paid_at) },
+          ]}
+          actions={(r) => (
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => previewReceipt(r)}>
+              View receipt
+            </button>
+          )}
+        />
+      )}
+      {receiptPreview && (
+        <Modal
+          title={`Receipt preview · ${receiptPreview.payment.receipt_no || 'Payment'}`}
+          onClose={closePreview}
+          className="receipt-preview-modal"
+        >
+          <div className="receipt-preview">
+            {receiptPreview.loading && <p className="muted" role="status">Preparing receipt preview…</p>}
+            {receiptPreview.error && (
+              <div className="receipt-preview__error">
+                <p className="alert alert--error" role="alert">{receiptPreview.error}</p>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => previewReceipt(receiptPreview.payment)}>Try again</button>
+              </div>
+            )}
+            {receiptPreview.url && (
+              <iframe
+                className="receipt-preview__document"
+                src={receiptPreview.url}
+                title={`Receipt ${receiptPreview.payment.receipt_no || ''}`}
+              />
+            )}
+          </div>
+          <div className="modal__foot">
+            <button type="button" className="btn btn--ghost" onClick={closePreview}>Close</button>
+            <button type="button" className="btn btn--accent" disabled={!receiptPreview.url} onClick={downloadReceipt}>Download receipt</button>
+          </div>
+        </Modal>
+      )}
+    </section>
   )
 }
 

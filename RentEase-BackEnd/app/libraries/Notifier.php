@@ -23,7 +23,7 @@ class Notifier
     private function site()
     {
         $s = $this->_lava->Site_setting_model->get_all();
-        return ['name' => $s['site_name'], 'accent' => $s['accent_color']];
+        return ['name' => $s['site_name'] ?? 'RentEase', 'accent' => $s['accent_color'] ?? '#e05a47'];
     }
 
     private function frontend($path = '')
@@ -204,7 +204,7 @@ class Notifier
                 'Issue description: "' . $m['description'] . '"',
             ];
             if ($img_count > 0) {
-                $paragraphs[] = '📸 ' . $img_count . ' photo' . ($img_count > 1 ? 's' : '') . ' attached with the repair request. You can inspect photos and manage repairs in your landlord dashboard.';
+                $paragraphs[] = $img_count . ' photo' . ($img_count > 1 ? 's' : '') . ' attached with the repair request. You can inspect photos and manage repairs in your landlord dashboard.';
             }
 
             $rows = [
@@ -288,15 +288,15 @@ class Notifier
     public function receipt_data(array $p)
     {
         $bill = $this->_lava->Bill_model->find($p['bill_id']);
-        $site = $this->_lava->Site_setting_model->get_all();
-        return ['site_name' => $site['site_name'], 'accent' => $site['accent_color'], 'p' => $p, 'bill' => $bill];
+        $site = $this->site();
+        return ['site_name' => $site['name'], 'accent' => $site['accent'], 'p' => $p, 'bill' => $bill];
     }
 
     public function statement_data(array $bill)
     {
-        $site = $this->_lava->Site_setting_model->get_all();
+        $site = $this->site();
         $pays = $this->_lava->Payment_model->list_payments(['tenant_id' => $bill['tenant_id']]);
         $pays = array_values(array_filter($pays, function ($x) use ($bill) { return (int) $x['bill_id'] === (int) $bill['id'] && $x['status'] === 'paid'; }));
-        return ['site_name' => $site['site_name'], 'accent' => $site['accent_color'], 'bill' => $bill, 'payments' => $pays];
+        return ['site_name' => $site['name'], 'accent' => $site['accent'], 'bill' => $bill, 'payments' => $pays];
     }
 }

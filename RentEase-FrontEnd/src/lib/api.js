@@ -88,10 +88,44 @@ export async function api(path, opts = {}) {
   return (await send(path, opts)).data
 }
 
-/** Authenticated document download: fetches the file as a blob and saves it (the token never goes in the URL). */
-export async function downloadPdf(path, filename) {
+/** Fetches an authenticated PDF without exposing the token in the URL. */
+export async function fetchPdf(path) {
   const res = await send(path, { auth: true, responseType: 'blob' })
-  const url = URL.createObjectURL(res.data)
+  const header = new Uint8Array(await res.data.slice(0, 1024).arrayBuffer())
+  let signatureOffset = -1
+  for (let i = 0; i <= header.length - 5; i += 1) {
+    if (header[i] === 0x25 && header[i + 1] === 0x50 && header[i + 2] === 0x44 && header[i + 3] === 0x46 && header[i + 4] === 0x2d) {
+      signatureOffset = i
+      break
+    }
+  }
+  if (signatureOffset < 0) {
+    const body = await res.data.slice(0, 128 * 1024).text()
+    let message = `The receipt endpoint returned ${res.headers['content-type'] || 'an unknown content type'}, not a PDF (HTTP ${res.status}).`
+    try {
+      const payload = JSON.parse(body)
+      if (payload?.error) message = payload.error
+    } catch {
+      const errorPage = new DOMParser().parseFromString(body, 'text/html')
+      const phpMessage = errorPage.querySelector('.exc-msg')?.textContent?.trim()
+      const title = errorPage.querySelector('title')?.textContent?.trim()
+      if (phpMessage) {
+        message = `Receipt generation failed${title ? ` (${title.replace(/^PHP Error\s*[—-]\s*/i, '')})` : ''}: ${phpMessage}`
+      } else {
+        errorPage.querySelectorAll('style, script').forEach((element) => element.remove())
+        const readable = (errorPage.body?.textContent || '').replace(/\s+/g, ' ').trim()
+        if (readable) message += ` Response: ${readable.slice(0, 240)}`
+      }
+    }
+    throw new ApiError(message, res.status)
+  }
+  return signatureOffset ? res.data.slice(signatureOffset) : res.data
+}
+
+/** Authenticated document download: the token never goes in the URL. */
+export async function downloadPdf(path, filename) {
+  const blob = await fetchPdf(path)
+  const url = URL.createObjectURL(blob)
   const a = Object.assign(document.createElement('a'), { href: url, download: filename })
   document.body.appendChild(a)
   a.click()

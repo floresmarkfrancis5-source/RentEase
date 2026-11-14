@@ -7,6 +7,7 @@ export default function UnitDetailModal({
   unit,
   onClose,
   actionLabel,
+  actionIcon,
   onAction,
   actionDisabled = false,
   actionHint = '',
@@ -30,18 +31,16 @@ export default function UnitDetailModal({
         <div className="stack">
           {/* Unit Image / Photo preview */}
           {unit.image_url ? (
-            <div
-              className="unit-window-hero"
-              onClick={() => setShowPhoto(true)}
-              title="Click to view full photo"
-            >
+            <button type="button" className="unit-window-hero" onClick={() => setShowPhoto(true)} title="Click to view full photo">
               <img src={unit.image_url} alt={unit.unit_name} />
-              <span className="unit-window-hero__badge">🔍 Click to zoom</span>
-            </div>
+              <span className="unit-window-hero__badge">Click to view full photo</span>
+            </button>
           ) : (
             <div className="unit-window-hero" style={{ height: 160, background: 'var(--page-raised)' }}>
               <div style={{ textAlign: 'center', color: 'var(--page-muted)' }}>
-                <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: 4 }}>🏠</span>
+                <svg viewBox="0 0 96 76" aria-hidden="true" style={{ width: 58, height: 46, display: 'block', margin: '0 auto 8px', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
+                  <path d="M17 66V21h26v45M43 32h36v34M10 66h76M26 31h8m-8 9h8m-8 9h8m-8 9h8m19-17h8m-8 10h8m-8 10h8m9-20h8m-8 10h8m-8 10h8" />
+                </svg>
                 <span style={{ fontSize: '.86rem' }}>No photo uploaded for this unit</span>
               </div>
             </div>
@@ -51,11 +50,11 @@ export default function UnitDetailModal({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
               <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>{unit.unit_name}</h3>
-              {unit.occupancy_status && <StatusPill value={unit.lease_status === 'scheduled' ? 'scheduled' : unit.occupancy_status} />}
+              {unit.occupancy_status && <StatusPill value={['offered', 'scheduled'].includes(unit.lease_status) ? unit.lease_status : unit.occupancy_status} />}
               {unit.condition_tag && <StatusPill value={unit.condition_tag} />}
             </div>
             <p style={{ margin: 0, color: 'var(--page-muted)', fontSize: '.88rem' }}>
-              📍 {unit.property_name}{address ? ` · ${address}` : ''}
+              {unit.property_name}{address ? ` · ${address}` : ''}
             </p>
           </div>
 
@@ -76,7 +75,7 @@ export default function UnitDetailModal({
               <strong style={{ fontSize: '1rem', textTransform: 'capitalize' }}>
                 {(unit.condition_tag || 'Good').replace('_', ' ')}
               </strong>
-              <span style={{ fontSize: '.76rem', color: '#16a34a', display: 'block' }}>✓ Verified</span>
+              <span style={{ fontSize: '.76rem', color: '#16a34a', display: 'block' }}>Verified</span>
             </div>
           </div>
 
@@ -117,7 +116,7 @@ export default function UnitDetailModal({
               <div style={{ fontSize: '.95rem', fontWeight: 600, marginTop: '2px' }}>
                 {unit.lease_status === 'scheduled'
                   ? `Move-in ${dateFmt(unit.start_date)} · ${unit.tenant_name}`
-                  : `👤 ${unit.tenant_name}`}
+                  : unit.tenant_name}
               </div>
             </div>
           )}
@@ -170,7 +169,8 @@ export default function UnitDetailModal({
                   onAction(unit)
                 }}
               >
-                {actionLabel}
+                {actionIcon && <span className="unit-detail-action__icon">{actionIcon}</span>}
+                <span>{actionLabel}</span>
               </button>
             )}
           </div>

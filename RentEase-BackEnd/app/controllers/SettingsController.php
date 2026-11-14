@@ -14,7 +14,7 @@ class SettingsController extends BaseApiController
     public function __construct()
     {
         parent::__construct();
-        $this->call->model('Site_setting_model');
+        $this->call->model(['Site_setting_model', 'User_model']);
     }
 
     public function show()
@@ -33,7 +33,15 @@ class SettingsController extends BaseApiController
             $this->fail('Landlord settings are not available for this account.', 404);
         }
         header('Cache-Control: no-store');
-        $this->ok(['data' => $this->Site_setting_model->get_all($owner_id)]);
+        $landlord = $this->User_model->find_by_id($owner_id);
+        $this->ok([
+            'data' => $this->Site_setting_model->get_all($owner_id),
+            'landlord' => $landlord ? [
+                'full_name' => $landlord['full_name'],
+                'email' => $landlord['email'],
+                'phone' => $landlord['phone'],
+            ] : null,
+        ]);
     }
 
     public function update()

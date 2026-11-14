@@ -12,7 +12,7 @@ class Site_setting_model extends Model
 {
     protected $table = 'site_settings';
 
-    /** type: text | color | url | enum | int | decimal */
+    /** type: text | color | url | enum | int | decimal | methods */
     public const SCHEMA = [
         // ---- landlord's sidebar logo ----
         'logo_url'        => ['group' => 'branding',   'type' => 'url',   'max' => 500, 'default' => ''],
@@ -36,6 +36,7 @@ class Site_setting_model extends Model
         'billing_prorate_first_month' => ['group' => 'billing', 'type' => 'enum', 'values' => ['0', '1'], 'default' => '1'],
         'billing_grace_period_days' => ['group' => 'billing', 'type' => 'int', 'min' => 0, 'max' => 15, 'default' => '3'],
         'billing_late_fee' => ['group' => 'billing', 'type' => 'decimal', 'min' => 0, 'max' => 999999.99, 'default' => '0.00'],
+        'payment_methods' => ['group' => 'billing', 'type' => 'methods', 'values' => ['gcash', 'paymaya'], 'default' => 'gcash,paymaya'],
     ];
 
     /** @return array<string,string> every setting, falling back to defaults for missing rows */
@@ -88,6 +89,33 @@ class Site_setting_model extends Model
                 continue;
             }
             $raw = $input[$key];
+            if ($def['type'] === 'methods') {
+                $methods = is_array($raw) ? $raw : (is_scalar($raw) ? explode(',', (string) $raw) : null);
+                if ($methods === null) {
+                    $errors[$key] = 'Choose one or more supported payment methods.';
+                    continue;
+                }
+                if (array_filter($methods, static function ($method) {
+                    return !is_string($method);
+                })) {
+                    $errors[$key] = 'Choose GCash, Maya, or both.';
+                    continue;
+                }
+                $methods = array_values(array_unique(array_filter(array_map(
+                    static function ($method) {
+                        return trim($method);
+                    },
+                    $methods
+                ), static function ($method) {
+                    return $method !== '';
+                })));
+                if (array_diff($methods, $def['values'])) {
+                    $errors[$key] = 'Choose GCash, Maya, or both.';
+                    continue;
+                }
+                $clean[$key] = implode(',', $methods);
+                continue;
+            }
             if (!is_scalar($raw) && $raw !== null) {
                 $errors[$key] = 'Invalid value.';
                 continue;

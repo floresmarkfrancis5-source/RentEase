@@ -200,7 +200,7 @@ export default function SuperadminDashboard() {
 
             {(Number(deleteTarget.property_count) > 0 || Number(deleteTarget.tenant_count) > 0) ? (
               <div className="alert alert--error" style={{ margin: 0 }}>
-                <strong>⚠️ Warning:</strong> This landlord owns <strong>{deleteTarget.property_count}</strong> propert{Number(deleteTarget.property_count) === 1 ? 'y' : 'ies'} and <strong>{deleteTarget.tenant_count}</strong> tenant{Number(deleteTarget.tenant_count) === 1 ? '' : 's'}. Deleting this account will permanently delete all associated properties, units, leases, bills, maintenance requests, and tenant records.
+                <strong><svg className="alert__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.8 20h18.4L12 3Z" /><path d="M12 9v5m0 3h.01" /></svg> Warning:</strong> This landlord owns <strong>{deleteTarget.property_count}</strong> propert{Number(deleteTarget.property_count) === 1 ? 'y' : 'ies'} and <strong>{deleteTarget.tenant_count}</strong> tenant{Number(deleteTarget.tenant_count) === 1 ? '' : 's'}. Deleting this account will permanently delete all associated properties, units, leases, bills, maintenance requests, and tenant records.
               </div>
             ) : (
               <p className="muted" style={{ fontSize: '.88rem', margin: 0 }}>

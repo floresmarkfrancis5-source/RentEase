@@ -12,6 +12,7 @@ Rental billing system for landlords and tenants of apartments and boarding house
 | First-run setup & AI | Skippable property/unit/tenant setup wizard; optional Gemini assistant creates editable drafts that require landlord confirmation |
 | Billing & payments | Monthly bills (no duplicates), overdue tracking, manual payments, **PayMongo** checkout + webhook |
 | Maintenance | Tenants file repair requests, landlord updates status |
+| Tenant communications | Landlord announcements, General group chat, direct tenant chats, reactions, and Cloudinary image sharing |
 | Notifications & receipts | SMTP e-mails (PHPMailer), PDF receipts and statements (Dompdf), due-date reminders (cron) |
 | Dashboard & reports | Collected / outstanding / overdue, occupancy, 6-month billed vs collected |
 | Site settings | Each landlord has private colours, theme, tenant welcome page and sidebar logo. These settings are shared only with that landlord's tenants (`GET /api/my/settings`); public RentEase branding stays fixed. |
@@ -26,11 +27,12 @@ app/
   views/         Views – e-mail template, PDF receipt/statement, API landing page
   middlewares/   Security middleware (see below)
   libraries/     Mailer, Pdf, Paymongo, Google_auth, Notifier
-  migrations/    000–032 – the database, created with `php lava migration run`
-database/        schema.sql, seed.sql, useful_queries.sql
+  migrations/    000–038 – authoritative database schema, created with `php lava migration run`
 docs/            SECURITY.md, API.md
 ```
 The React app is the "view" of the system for users; the API views render e-mails and PDFs.
+In this monorepo, the root-level `database/` directory contains optional demo data and an older schema snapshot;
+do not use `database/schema.sql` to initialize the current app.
 
 ### API and database conventions
 Controllers inherit from `BaseApiController`, which loads LavaLust's `api` library; use `$this->api` for
@@ -61,8 +63,8 @@ See `docs/SECURITY.md`.
 composer install                     # dompdf + phpmailer
 cp .env.example .env                 # set DB_* (create the database first, utf8mb4)
 php lava jwt:generate                # fills JWT_SECRET and REFRESH_TOKEN_KEY
-php lava migration run               # creates all tables
-mysql -u root rentease_db < database/seed.sql     # optional demo data
+php lava migration run               # fresh databases require private SUPERADMIN_BOOTSTRAP_* values before migration 018
+mysql -u root rentease_db < ../database/seed.sql  # optional demo data only; never use on a public deployment
 php lava serve --port=3000           # http://localhost:3000/api/health
 ```
 LavaLust loads `vendor/autoload.php` through `app/config/config.php`; integration settings are mapped from `.env` in their corresponding `app/config` files and accessed with `config_item()`.
@@ -97,9 +99,10 @@ per-query durations. Turn the setting off after collecting them.
 ## First superadmin
 Before applying migration 018, set `SUPERADMIN_BOOTSTRAP_EMAIL`, `SUPERADMIN_BOOTSTRAP_USERNAME`,
 `SUPERADMIN_BOOTSTRAP_FULL_NAME`, and a unique `SUPERADMIN_BOOTSTRAP_PASSWORD` (12+ characters) privately
-in the backend environment. Migration 018 creates the first account only if none exists. Remove the bootstrap
-password from the environment after success. There is no public superadmin registration route. Superadmins manage
-landlords at `/superadmin` and can create additional superadmins.
+in the backend `.env` when running the migrations against a fresh database. Migration 018 fails safely if these
+values are missing or invalid, and creates the first account only if none exists. Remove the bootstrap password
+from the environment after success. There is no public superadmin registration route. Superadmins manage landlords
+at `/superadmin` and can create additional superadmins.
 
 Password recovery links require working SMTP settings and `FRONTEND_URL`; links are single-use and expire in 30 minutes.
 
@@ -109,4 +112,8 @@ Password recovery links require working SMTP settings and `FRONTEND_URL`; links 
 LavaLust's library-specific configs in `app/config/` (except database and framework settings, which use their existing config files).
 
 ## Updating an existing database (e.g. Aiven)
-Back up the database, then run `php lava migration run` once to apply any unapplied migrations. Migration 030 stops with the tenant ID if existing duplicate active leases would violate the new one-current-lease rule; resolve those records before retrying. For a progress-check walkthrough, see `docs/PROGRESS_CHECK_GUIDE.md`.
+Back up the database, point the local backend `.env` at the target, enable `MIGRATION_ENABLED=true` for the CLI run,
+and execute `php lava migration run`; verify with `php lava migration status`. Keep migrations disabled/unset on the
+deployed web service. Migration 030 stops with the tenant ID if existing duplicate active leases would violate the
+new one-current-lease rule; resolve those records before retrying. Migration 038 adds reversible property and unit
+archiving without deleting related history. For a progress-check walkthrough, see `docs/PROGRESS_CHECK_GUIDE.md`.

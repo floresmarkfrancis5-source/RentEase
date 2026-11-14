@@ -1,33 +1,94 @@
 <?php defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
-/** Official receipt (PDF). Variables: site_name, accent, p (payment row), bill (bill row) */
+/** Payment receipt (PDF). Variables: site_name, accent, p (payment row), bill (bill row) */
 $h = function ($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); };
 $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $accent) ? $accent : '#0f766e';
 $peso = function ($n) { return 'PHP ' . number_format((float) $n, 2); };
+$paidAt = !empty($p['paid_at']) ? strtotime($p['paid_at']) : false;
+$dueAt = !empty($bill['due_date']) ? strtotime($bill['due_date']) : false;
+$periodAt = !empty($p['period_month']) ? strtotime($p['period_month'] . '-01') : false;
+$lateFee = max(0, (float) ($bill['late_fee_amount'] ?? 0));
+$rentAmount = max(0, (float) ($bill['amount'] ?? $p['amount']) - $lateFee);
+$method = ucwords(str_replace('_', ' ', (string) ($p['method'] ?? '')));
 ?>
 <html><head><meta charset="utf-8"><style>
-  @page { margin: 36px 42px; }
-  body { font-family: 'DejaVu Sans', sans-serif; font-size: 12px; color: #0e1726; }
-  .band { background: <?= $h($accent) ?>; color: #fff; padding: 18px 22px; }
-  .band h1 { margin: 0; font-size: 20px; }
-  .band small { opacity: .85; }
-  table { width: 100%; border-collapse: collapse; margin-top: 18px; }
-  td, th { padding: 9px 6px; border-bottom: 1px solid #dfe5f0; text-align: left; }
-  th { color: #52607a; font-weight: normal; width: 34%; }
-  .total { margin-top: 22px; padding: 16px 20px; background: #f1f5fb; text-align: right; font-size: 18px; font-weight: bold; }
-  .paid { display: inline-block; border: 3px solid #059669; color: #059669; padding: 4px 14px; font-weight: bold; font-size: 16px; letter-spacing: 2px; margin-top: 18px; }
-  .foot { margin-top: 36px; color: #52607a; font-size: 10px; }
+  @page { margin: 38px 48px; }
+  body { font-family: 'DejaVu Sans', sans-serif; font-size: 11px; line-height: 1.5; color: #172235; }
+  .receipt { border: 1px solid #d8e0e8; }
+  .header { padding: 22px 28px 20px; border-top: 5px solid <?= $h($accent) ?>; background: #172235; color: #fff; }
+  .header-table, .meta, .items, .total-table { width: 100%; border-collapse: collapse; }
+  .brand { font-size: 18px; font-weight: bold; }
+  .document-type { text-align: right; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; }
+  .receipt-label { margin-top: 3px; font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase; opacity: .82; }
+  .receipt-number { margin-top: 15px; font-size: 12px; font-weight: bold; }
+  .paid { display: inline-block; padding: 4px 10px; border: 1px solid #bcebd7; border-radius: 3px; background: #e9f8f1; color: #087443; font-size: 9px; font-weight: bold; letter-spacing: 1px; }
+  .content { padding: 24px 28px 26px; }
+  .meta td { width: 50%; padding: 0 12px 16px 0; vertical-align: top; }
+  .label { display: block; margin-bottom: 3px; color: #68778b; font-size: 8px; font-weight: bold; letter-spacing: .8px; text-transform: uppercase; }
+  .value { font-size: 11px; font-weight: bold; }
+  .section-title { margin: 8px 0 6px; color: #68778b; font-size: 8px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; }
+  .items th { padding: 8px 10px; background: #f1f5f8; color: #526174; font-size: 8px; letter-spacing: .5px; text-align: left; text-transform: uppercase; }
+  .items td { padding: 11px 10px; border-bottom: 1px solid #e3e8ee; }
+  .items .amount { width: 30%; text-align: right; white-space: nowrap; }
+  .total-wrap { margin-top: 14px; padding: 12px 14px; border: 1px solid #d8e0e8; background: #f8fafc; }
+  .total-table td { vertical-align: middle; }
+  .total-label { color: #526174; font-size: 10px; font-weight: bold; letter-spacing: .6px; text-transform: uppercase; }
+  .total-amount { color: <?= $h($accent) ?>; font-size: 19px; font-weight: bold; text-align: right; white-space: nowrap; }
+  .reference { margin-top: 18px; padding-top: 12px; border-top: 1px dashed #bfc9d4; color: #526174; font-size: 9px; }
+  .reference strong { color: #172235; }
+  .footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #e3e8ee; color: #68778b; font-size: 8px; text-align: center; }
 </style></head><body>
-  <div class="band"><h1><?= $h($site_name) ?></h1><small>Official Receipt</small></div>
-  <div class="paid">PAID</div>
-  <table>
-    <tr><th>Receipt no.</th><td><strong><?= $h($p['receipt_no']) ?></strong></td></tr>
-    <tr><th>Date paid</th><td><?= $h(date('F j, Y g:i A', strtotime($p['paid_at']))) ?></td></tr>
-    <tr><th>Received from</th><td><?= $h($p['tenant_name']) ?></td></tr>
-    <tr><th>Property / Unit</th><td><?= $h($p['property_name']) ?> - Unit <?= $h($p['unit_name']) ?></td></tr>
-    <tr><th>Payment for</th><td><?= $h($p['bill_description']) ?></td></tr>
-    <tr><th>Due date</th><td><?= $h(date('F j, Y', strtotime($bill['due_date']))) ?></td></tr>
-    <tr><th>Payment method</th><td><?= $h(ucwords(str_replace('_', ' ', $p['method']))) ?><?= $p['paymongo_payment_ref'] ? ' (ref ' . $h($p['paymongo_payment_ref']) . ')' : '' ?></td></tr>
-  </table>
-  <div class="total">Amount paid: <?= $h($peso($p['amount'])) ?></div>
-  <p class="foot">This receipt was generated by <?= $h($site_name) ?> and is valid without a signature.</p>
+  <div class="receipt">
+    <div class="header">
+      <table class="header-table"><tr>
+        <td><div class="brand"><?= $h($site_name) ?></div><div class="receipt-label">Payment receipt</div></td>
+        <td class="document-type">Payment receipt</td>
+      </tr></table>
+      <div class="receipt-number">Receipt no. <?= $h($p['receipt_no'] ?? '—') ?></div>
+    </div>
+    <div class="content">
+      <table class="meta">
+        <tr>
+          <td><span class="label">Received from</span><span class="value"><?= $h($p['tenant_name'] ?? '—') ?></span></td>
+          <td><span class="label">Payment status</span><span class="paid">PAID</span></td>
+        </tr>
+        <tr>
+          <td><span class="label">Property / unit</span><span class="value"><?= $h($p['property_name'] ?? '—') ?> · <?= $h($p['unit_name'] ?? '—') ?></span></td>
+          <td><span class="label">Date received</span><span class="value"><?= $paidAt ? $h(date('F j, Y · g:i A', $paidAt)) : '—' ?></span></td>
+        </tr>
+        <tr>
+          <td><span class="label">Billing period</span><span class="value"><?= $periodAt ? $h(date('F Y', $periodAt)) : '—' ?></span></td>
+          <td><span class="label">Due date</span><span class="value"><?= $dueAt ? $h(date('F j, Y', $dueAt)) : '—' ?></span></td>
+        </tr>
+      </table>
+
+      <div class="section-title">Payment details</div>
+      <table class="items">
+        <thead><tr><th>Description</th><th class="amount">Amount</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><?= $h($p['bill_description'] ?? 'Rent payment') ?></td>
+            <td class="amount"><?= $h($peso($rentAmount)) ?></td>
+          </tr>
+          <?php if ($lateFee > 0): ?>
+            <tr><td>Late fee</td><td class="amount"><?= $h($peso($lateFee)) ?></td></tr>
+          <?php endif; ?>
+        </tbody>
+      </table>
+
+      <div class="total-wrap">
+        <table class="total-table"><tr>
+          <td class="total-label">Total amount received</td>
+          <td class="total-amount"><?= $h($peso($p['amount'] ?? 0)) ?></td>
+        </tr></table>
+      </div>
+
+      <div class="reference">
+        Payment method: <strong><?= $h($method ?: '—') ?></strong>
+        <?php if (!empty($p['paymongo_payment_ref'])): ?>
+          <br>Transaction reference: <strong><?= $h($p['paymongo_payment_ref']) ?></strong>
+        <?php endif; ?>
+      </div>
+      <div class="footer">This receipt confirms payment recorded by <?= $h($site_name) ?>. Keep it for your records.</div>
+    </div>
+  </div>
 </body></html>

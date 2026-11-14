@@ -301,7 +301,7 @@ class Profiler
         $benchmarks = $this->_get_benchmarks();
         foreach ($benchmarks as $b) {
             if (strpos($b['label'], 'Total') !== false || strpos($b['label'], 'LavaLust') !== false) {
-                $html .= '<span class="llp-chip llp-chip-time">⏱ ' . $b['time'] . 's</span>';
+                $html .= '<span class="llp-chip llp-chip-time">' . $b['time'] . 's</span>';
                 break;
             }
         }

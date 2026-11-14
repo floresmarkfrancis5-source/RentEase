@@ -1,7 +1,7 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Server-side Gemini client for drafting landlord-approved rental setup actions. */
+/** Server-side Gemini client for the landlord assistant and reviewable drafts. */
 class Gemini
 {
     public function configured()
@@ -9,8 +9,61 @@ class Gemini
         return (string) config_item('gemini_api_key') !== '';
     }
 
-    public function rental_assistant(array $messages)
+    public function summarize_landlord_report(array $metrics)
     {
+        $candidate = $this->generate_content(
+            [['role' => 'user', 'parts' => [[
+                'text' => json_encode($metrics, JSON_THROW_ON_ERROR),
+            ]]]],
+            'Write a concise, professional landlord portfolio report summary using only the supplied aggregate figures. Do not invent causes, trends, comparisons, dates, tenant details, or advice. Note that the current portfolio snapshot and period activity are different scopes. Return JSON with "summary" (one short paragraph) and "observations" (up to three short factual strings).',
+            512,
+            null,
+            0.2,
+            'AUTO',
+            12
+        );
+        $text = implode('', array_map(static function ($part) {
+            return is_string($part['text'] ?? null) ? $part['text'] : '';
+        }, $candidate['parts'] ?? []));
+        $result = json_decode($text, true);
+        if (!is_array($result) || !is_string($result['summary'] ?? null)
+            || trim($result['summary']) === '' || mb_strlen($result['summary']) > 1200
+            || !is_array($result['observations'] ?? null) || count($result['observations']) > 3) {
+            throw new RuntimeException('Gemini returned an invalid report summary. Please try again.');
+        }
+        $observations = [];
+        foreach ($result['observations'] as $observation) {
+            if (!is_string($observation) || trim($observation) === '' || mb_strlen($observation) > 240) {
+                throw new RuntimeException('Gemini returned an invalid report observation. Please try again.');
+            }
+            $observations[] = trim($observation);
+        }
+        return ['summary' => trim($result['summary']), 'observations' => $observations];
+    }
+
+    public function answer_public_question($question, $knowledgeBase, $instructions)
+    {
+        $candidate = $this->generate_content(
+            [['role' => 'user', 'parts' => [['text' => trim((string) $question)]]]],
+            trim((string) $instructions) . "\n\nVerified RentEase knowledge base:\n" . trim((string) $knowledgeBase),
+            320,
+            [],
+            0.2,
+            'NONE',
+            12
+        );
+        $reply = trim(implode('', array_map(static function ($part) {
+            return is_string($part['text'] ?? null) ? $part['text'] : '';
+        }, $candidate['parts'] ?? [])));
+        if ($reply === '' || mb_strlen($reply) > 1600) {
+            throw new RuntimeException('RentEase public assistant returned an invalid answer.');
+        }
+        return $reply;
+    }
+
+    public function rental_assistant(array $messages, callable $toolExecutor, $displayName = '', array $assistantToolDeclarations = [])
+    {
+        $deadline = microtime(true) + 35;
         $contents = [];
         foreach ($messages as $message) {
             $contents[] = [
@@ -18,18 +71,335 @@ class Gemini
                 'parts' => [['text' => $message['content']]],
             ];
         }
+        $instructions = $this->instructions($displayName);
+        $tools = [[
+            'functionDeclarations' => [[
+                'name' => 'lookup_rental_records',
+                'description' => 'Search read-only rental records for the signed-in landlord only when the latest user message asks about records and no matching verified lookup result is already provided. Use earlier turns only to resolve a clear reference such as “those” or “that property”; never search for or answer an earlier request instead. Results are returned to Gemini to answer the landlord naturally. The server enforces landlord and property scope.',
+                'parameters' => [
+                    'type' => 'OBJECT',
+                    'properties' => [
+                        'question' => [
+                            'type' => 'STRING',
+                            'description' => 'A complete natural-language question about the specific records to retrieve. Include relevant context from earlier turns.',
+                        ],
+                    ],
+                    'required' => ['question'],
+                ],
+            ], [
+                'name' => 'prepare_property_draft',
+                'description' => 'Prepare a property, unit, and optional tenant draft for the landlord to review. This never saves anything.',
+                'parameters' => [
+                    'type' => 'OBJECT',
+                    'properties' => [
+                        'property' => ['type' => 'OBJECT'],
+                        'units' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT']],
+                        'tenants' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT']],
+                    ],
+                    'required' => ['property', 'units', 'tenants'],
+                ],
+            ], [
+                'name' => 'prepare_contract_draft',
+                'description' => 'Prepare optional contract clauses, house rules, utilities, and notice settings for landlord review. This never saves anything.',
+                'parameters' => [
+                    'type' => 'OBJECT',
+                    'properties' => [
+                        'clauses' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT']],
+                        'rules' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']],
+                        'utilities' => ['type' => 'OBJECT'],
+                        'notices' => ['type' => 'OBJECT'],
+                    ],
+                    'required' => ['clauses', 'rules', 'utilities', 'notices'],
+                ],
+            ], [
+                'name' => 'suggest_user_replies',
+                'description' => 'Write two or three natural, context-specific next prompts for the landlord. Use this whenever your response asks a question or answers a rental-record lookup, including an opening greeting. Keep prompts grounded in the latest request and lookup result; do not revive unrelated older topics.',
+                'parameters' => [
+                    'type' => 'OBJECT',
+                    'properties' => [
+                        'suggestions' => [
+                            'type' => 'ARRAY',
+                            'items' => ['type' => 'STRING'],
+                            'description' => 'Two or three concise, natural possible replies that directly answer the assistant’s latest question.',
+                        ],
+                    ],
+                    'required' => ['suggestions'],
+                ],
+            ]],
+        ]];
+        $declaredNames = array_column($tools[0]['functionDeclarations'], 'name');
+        foreach ($assistantToolDeclarations as $declaration) {
+            if (!is_array($declaration) || !is_string($declaration['name'] ?? null)
+                || !is_array($declaration['parameters'] ?? null)
+                || !is_string($declaration['description'] ?? null)) {
+                throw new RuntimeException('RentEase assistant tools are not configured correctly.');
+            }
+            if (in_array($declaration['name'], $declaredNames, true)) {
+                continue;
+            }
+            $tools[0]['functionDeclarations'][] = $declaration;
+            $declaredNames[] = $declaration['name'];
+        }
+        $suggestionTools = [[
+            'functionDeclarations' => [$tools[0]['functionDeclarations'][3]],
+        ]];
 
-        $result = $this->generate_json($contents, $this->instructions(), 2048);
-        if (!isset($result['reply']) || !is_string($result['reply'])) {
-            throw new RuntimeException('Gemini returned an invalid assistant response. Please try again.');
+        $recordLookupUsed = false;
+        $readTools = [
+            'search_properties', 'search_units', 'search_tenants', 'get_bills', 'get_payments',
+            'get_tenant_balance', 'get_overdue_summary', 'get_maintenance_requests',
+            'get_move_requests', 'get_leases', 'get_chat_history', 'lookup_rental_records',
+        ];
+        $proposal = null;
+        $suggestions = [];
+        $this->debug_log(['event' => 'assistant_request', 'message' => $messages ? end($messages)['content'] ?? '' : '']);
+        for ($round = 0; $round < 6; $round++) {
+            $candidate = $this->generate_content(
+                $contents,
+                $instructions,
+                4096,
+                $tools,
+                0.2,
+                'AUTO',
+                $this->remaining_timeout($deadline)
+            );
+            $parts = $candidate['parts'] ?? [];
+            $functionCalls = array_values(array_filter($parts, static function ($part) {
+                return isset($part['functionCall']) && is_array($part['functionCall']);
+            }));
+            if (!$functionCalls) {
+                $text = trim(implode('', array_map(static function ($part) {
+                    return is_string($part['text'] ?? null) ? $part['text'] : '';
+                }, $parts)));
+                if ($text === '') {
+                    throw new RuntimeException('Gemini returned an empty assistant response.');
+                }
+                $decoded = json_decode($text, true);
+                if (is_array($decoded)) {
+                    if (isset($decoded['reply']) && is_string($decoded['reply'])) {
+                        $text = $decoded['reply'];
+                    } elseif (isset($decoded['suggestions'])) {
+                        throw new RuntimeException('Gemini returned suggestions without its natural-language response.');
+                    }
+                    if ($proposal === null && is_array($decoded['proposal'] ?? null)) {
+                        $proposal = $this->validate_assistant_proposal($decoded['proposal']);
+                    }
+                    if (isset($decoded['suggestions'])) {
+                        $suggestions = $this->validate_reply_suggestions($decoded['suggestions']);
+                    }
+                }
+                if (!$suggestions && $proposal === null
+                    && ($recordLookupUsed || preg_match('/[?？]/u', $text))) {
+                    try {
+                        $suggestionContents = $contents;
+                        $suggestionContents[] = ['role' => 'model', 'parts' => [['text' => $text]]];
+                        $suggestionContents[] = [
+                            'role' => 'user',
+                            'parts' => [['text' => 'Generate grounded reply suggestions for the assistant reply above.']],
+                        ];
+                        $suggestionCandidate = $this->generate_content(
+                            $suggestionContents,
+                            $instructions . "\nCall suggest_user_replies now. If the answer contains rental-record results, suggest useful next record queries or actions grounded in those results and the latest user request. Otherwise, suggest natural replies to the assistant's question. Do not include an unrelated older topic and do not write another user-facing reply.",
+                            512,
+                            $suggestionTools,
+                            0.2,
+                            'ANY',
+                            $this->remaining_timeout($deadline)
+                        );
+                        $suggestionCall = null;
+                        foreach ($suggestionCandidate['parts'] ?? [] as $suggestionPart) {
+                            if (($suggestionPart['functionCall']['name'] ?? null) === 'suggest_user_replies') {
+                                $suggestionCall = $suggestionPart['functionCall'];
+                                break;
+                            }
+                        }
+                        if (!is_array($suggestionCall['args']['suggestions'] ?? null)) {
+                            throw new RuntimeException('Gemini did not return suggestions for its question.');
+                        }
+                        $suggestions = $this->validate_reply_suggestions($suggestionCall['args']['suggestions']);
+                    } catch (RuntimeException $e) {
+                        error_log('RentEase Gemini reply suggestions unavailable: ' . $e->getMessage());
+                    }
+                    if (!$suggestions) {
+                        $suggestions = $this->fallback_reply_suggestions($messages, $text);
+                    }
+                }
+                $this->debug_log(['event' => 'tool_loop_finished', 'iterations' => $round]);
+                return [
+                    'reply' => str_replace('{{landlord_name}}', trim((string) $displayName), $text),
+                    'proposal' => $proposal,
+                    'suggestions' => $suggestions,
+                    'record_lookup' => $recordLookupUsed,
+                ];
+            }
+            if ($round === 5) {
+                $this->debug_log(['event' => 'tool_loop_finished', 'iterations' => 5, 'limit_reached' => true]);
+                throw new RuntimeException('Gemini requested too many tools in one turn.');
+            }
+
+            foreach ($parts as &$part) {
+                if (isset($part['functionCall']['args']) && is_array($part['functionCall']['args'])
+                    && $part['functionCall']['args'] === []) {
+                    $part['functionCall']['args'] = (object) [];
+                }
+            }
+            unset($part);
+            $candidate['parts'] = $parts;
+            $contents[] = $candidate;
+            $functionResponses = [];
+            foreach ($functionCalls as $part) {
+                $call = $part['functionCall'];
+                $name = $call['name'] ?? '';
+                $arguments = $call['args'] ?? null;
+                if (is_object($arguments)) {
+                    $arguments = get_object_vars($arguments);
+                }
+                if (!is_array($arguments)) {
+                    throw new RuntimeException('Gemini requested a tool with invalid arguments.');
+                }
+                $this->debug_log([
+                    'event' => 'function_call',
+                    'iteration' => $round + 1,
+                    'name' => $name,
+                    'args' => $arguments,
+                ]);
+
+                if ($name === 'lookup_rental_records') {
+                    $question = $arguments['question'] ?? null;
+                    if (!is_string($question) || trim($question) === '' || mb_strlen($question) > 1000) {
+                        throw new RuntimeException('Gemini requested an invalid record lookup.');
+                    }
+                    $lookupResult = $toolExecutor($name, ['question' => trim($question)]);
+                    $recordLookupUsed = true;
+                } elseif ($name === 'prepare_property_draft') {
+                    $proposal = $this->validate_property_draft($arguments);
+                    $lookupResult = ['result' => 'Draft is ready for the landlord to review. Nothing has been saved.'];
+                } elseif ($name === 'prepare_contract_draft') {
+                    $proposal = $this->validate_contract_proposal($arguments);
+                    $lookupResult = ['result' => 'Contract draft is ready for the landlord to review. Nothing has been saved.'];
+                } elseif ($name === 'suggest_user_replies') {
+                    $suggestions = $this->validate_reply_suggestions($arguments['suggestions'] ?? null);
+                    $lookupResult = ['result' => 'Reply suggestions are ready. Finish the natural-language answer.'];
+                } else {
+                    $lookupResult = $toolExecutor($name, $arguments);
+                }
+
+                if (!is_array($lookupResult) && !is_string($lookupResult)) {
+                    throw new RuntimeException('A RentEase assistant tool returned an invalid result.');
+                }
+                if (in_array($name, $readTools, true)) {
+                    $recordLookupUsed = true;
+                }
+                $this->debug_log([
+                    'event' => 'function_result',
+                    'iteration' => $round + 1,
+                    'name' => $name,
+                    'result' => mb_substr(json_encode($lookupResult, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '', 0, 4000),
+                ]);
+                $responseValue = is_array($lookupResult)
+                    ? ($lookupResult === [] ? (object) [] : $lookupResult)
+                    : ['result' => $lookupResult];
+                $functionResponses[] = [
+                    'functionResponse' => [
+                        'name' => $name,
+                        'response' => $responseValue,
+                    ],
+                ];
+            }
+            $contents[] = ['role' => 'user', 'parts' => $functionResponses];
         }
-        if (!array_key_exists('proposal', $result)) {
-            $result['proposal'] = null;
+        $this->debug_log(['event' => 'tool_loop_finished', 'iterations' => min(5, $round + 1)]);
+        throw new RuntimeException('Gemini did not finish its response.');
+    }
+
+    private function fallback_reply_suggestions(array $messages, $reply)
+    {
+        if (preg_match('/\b(?:we can|you can|we could|you could|are we|would you like to|do you want to)\s+([^.!?？]+)[.!?？]?/iu', $reply, $matches)) {
+            $choices = preg_split('/\s*,\s*|\s+\bor\b\s+|\s+\band\b\s+|\s+\band\/or\b\s+/iu', trim($matches[1]));
+            $choices = array_values(array_filter(array_map(static function ($choice) {
+                $choice = trim($choice, " \t\n\r\0\x0B,;:");
+                $choice = preg_replace('/^(?:(?:and|or)\s+|to\s+|whether to\s+)/iu', '', $choice);
+                return trim($choice);
+            }, $choices), static function ($choice) {
+                return $choice !== '' && mb_strlen($choice) <= 120;
+            }));
+            if (count($choices) >= 2) {
+                return array_slice(array_map(static function ($choice) {
+                    return mb_strtoupper(mb_substr($choice, 0, 1)) . mb_substr($choice, 1);
+                }, $choices), 0, 3);
+            }
         }
-        if ($result['proposal'] !== null && !is_array($result['proposal'])) {
-            throw new RuntimeException('Gemini returned an invalid setup draft. Please ask it to try again.');
+
+        $latestUserMessage = '';
+        for ($index = count($messages) - 1; $index >= 0; $index--) {
+            if (($messages[$index]['role'] ?? null) === 'user') {
+                $latestUserMessage = (string) ($messages[$index]['content'] ?? '');
+                break;
+            }
         }
-        return ['reply' => $result['reply'], 'proposal' => $result['proposal']];
+        $context = mb_strtolower($latestUserMessage . ' ' . $reply);
+        if (preg_match('/\b(tenant|renter|occupant)\b/u', $context)) {
+            return ['List my tenants', 'Show tenant assignments', 'Help me add a tenant'];
+        }
+        if (preg_match('/\b(lease|contract|agreement|clause|house rule)\b/u', $context)) {
+            return ['Review a lease', 'Draft a lease agreement', 'Help me update a contract'];
+        }
+        if (preg_match('/\b(repair|maintenance|plumb|electric|leak|damage)\b/u', $context)) {
+            return ['Show open repair requests', 'List urgent repairs', 'Help me update a repair'];
+        }
+        if (preg_match('/\b(payment|rent|bill|overdue|paid|balance)\b/u', $context)) {
+            return ['Check unpaid rent', 'Show overdue bills', 'List recent payments'];
+        }
+        if (preg_match('/\b(property|unit|room|apartment|boarding)\b/u', $context)) {
+            return ['Show my properties', 'List my units', 'Help me add a property'];
+        }
+        return ['Check my rental records', 'List my tenants', 'Help me with a lease'];
+    }
+
+    private function validate_reply_suggestions($items)
+    {
+        if (!is_array($items) || count($items) < 2 || count($items) > 3) {
+            throw new RuntimeException('Gemini returned invalid reply suggestions.');
+        }
+        $suggestions = [];
+        foreach ($items as $item) {
+            if (!is_string($item) || trim($item) === '' || mb_strlen($item) > 120) {
+                throw new RuntimeException('Gemini returned an invalid reply suggestion.');
+            }
+            $suggestions[] = trim($item);
+        }
+        return $suggestions;
+    }
+
+    private function remaining_timeout($deadline)
+    {
+        $remaining = (int) ceil($deadline - microtime(true));
+        if ($remaining < 1) {
+            throw new RuntimeException('The Assistant response took too long. Please try again.');
+        }
+        return min(35, $remaining);
+    }
+
+    private function debug_log(array $entry)
+    {
+        if (!filter_var(config_item('assistant_debug'), FILTER_VALIDATE_BOOLEAN)) {
+            return;
+        }
+        $entry['timestamp'] = date('c');
+        $line = json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($line === false) {
+            error_log('RentEase Assistant debug event could not be encoded.');
+            return;
+        }
+        $path = APP_DIR . 'logs' . DIRECTORY_SEPARATOR . 'assistant-debug.log';
+        $directory = dirname($path);
+        if (!is_dir($directory) && !@mkdir($directory, 0750, true) && !is_dir($directory)) {
+            error_log('RentEase Assistant debug log directory could not be created.');
+            return;
+        }
+        if (@file_put_contents($path, $line . PHP_EOL, FILE_APPEND | LOCK_EX) === false) {
+            error_log('RentEase Assistant debug log could not be written.');
+        }
     }
 
     public function draft_contract($instruction)
@@ -37,10 +407,55 @@ class Gemini
         $result = $this->generate_json([
             ['role' => 'user', 'parts' => [['text' => $instruction]]],
         ], $this->contract_instructions(), 1536);
-        $proposal = $result['proposal'] ?? null;
-        if (!isset($result['reply']) || !is_string($result['reply'])
-            || !is_array($proposal) || ($proposal['kind'] ?? '') !== 'contract_draft'
-            || !is_array($proposal['clauses'] ?? null) || !is_array($proposal['rules'] ?? null)
+        if (!isset($result['reply']) || !is_string($result['reply'])) {
+            throw new RuntimeException('Gemini returned an invalid contract draft. Please ask it to try again.');
+        }
+        return [
+            'reply' => $result['reply'],
+            'proposal' => $this->validate_contract_proposal($result['proposal'] ?? []),
+        ];
+    }
+
+    private function validate_assistant_proposal(array $proposal)
+    {
+        if (($proposal['kind'] ?? null) === 'contract_draft') {
+            return $this->validate_contract_proposal($proposal);
+        }
+        return $this->validate_property_draft($proposal);
+    }
+
+    private function validate_property_draft(array $proposal)
+    {
+        if (!is_array($proposal['property'] ?? null)
+            || !is_array($proposal['units'] ?? null) || count($proposal['units']) < 1 || count($proposal['units']) > 100
+            || !is_array($proposal['tenants'] ?? null) || count($proposal['tenants']) > 100) {
+            throw new RuntimeException('Gemini returned an invalid property draft. Please ask it to try again.');
+        }
+
+        $allowedPropertyFields = ['name', 'type', 'address', 'city', 'barangay', 'description', 'latitude', 'longitude'];
+        $allowedUnitFields = ['unit_name', 'monthly_rent', 'capacity', 'condition_tag'];
+        $allowedTenantFields = ['username', 'email', 'full_name', 'phone', 'unit_index', 'start_date', 'monthly_rent', 'deposit', 'due_day'];
+        $property = array_intersect_key($proposal['property'], array_flip($allowedPropertyFields));
+        $units = [];
+        foreach ($proposal['units'] as $unit) {
+            if (!is_array($unit)) {
+                throw new RuntimeException('Gemini returned an invalid unit draft.');
+            }
+            $units[] = array_intersect_key($unit, array_flip($allowedUnitFields));
+        }
+        $tenants = [];
+        foreach ($proposal['tenants'] as $tenant) {
+            if (!is_array($tenant)) {
+                throw new RuntimeException('Gemini returned an invalid tenant draft.');
+            }
+            $tenants[] = array_intersect_key($tenant, array_flip($allowedTenantFields));
+        }
+        return ['property' => $property, 'units' => $units, 'tenants' => $tenants];
+    }
+
+    private function validate_contract_proposal(array $proposal)
+    {
+        if (!is_array($proposal['clauses'] ?? null) || !is_array($proposal['rules'] ?? null)
             || !is_array($proposal['utilities'] ?? null) || !is_array($proposal['notices'] ?? null)
             || count($proposal['clauses']) > 8 || count($proposal['rules']) > 20) {
             throw new RuntimeException('Gemini returned an invalid contract draft. Please ask it to try again.');
@@ -78,37 +493,86 @@ class Gemini
                 throw new RuntimeException('Gemini returned an invalid contract setting. Please ask it to try again.');
             }
         }
-        return ['reply' => $result['reply'], 'proposal' => $proposal];
+        return [
+            'kind' => 'contract_draft',
+            'clauses' => $proposal['clauses'],
+            'rules' => $proposal['rules'],
+            'utilities' => $proposal['utilities'],
+            'notices' => $proposal['notices'],
+        ];
     }
 
     private function generate_json(array $contents, $instructions, $maxOutputTokens)
+    {
+        $candidate = $this->generate_content($contents, $instructions, $maxOutputTokens, null, 0.2);
+        $text = implode('', array_map(static function ($part) {
+            return is_string($part['text'] ?? null) ? $part['text'] : '';
+        }, $candidate['parts'] ?? []));
+        $result = json_decode($text, true);
+        if (!is_array($result)) {
+            throw new RuntimeException('Gemini returned invalid JSON. Please try again.');
+        }
+        return $result;
+    }
+
+    protected function generate_content(
+        array $contents,
+        $instructions,
+        $maxOutputTokens,
+        ?array $tools = null,
+        $temperature = 0.7,
+        $functionCallingMode = 'AUTO',
+        $timeoutSeconds = 35
+    )
     {
         if (!$this->configured()) {
             throw new RuntimeException('The Gemini assistant is not configured on this server.');
         }
         $model = rawurlencode((string) config_item('gemini_model'));
         $url = rtrim((string) config_item('gemini_api_url'), '/') . '/models/' . $model . ':generateContent';
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 15,
-            CURLOPT_TIMEOUT => 90,
-            CURLOPT_HTTPHEADER => [
-                'Accept: application/json',
-                'Content-Type: application/json',
-                'x-goog-api-key: ' . (string) config_item('gemini_api_key'),
+        $payload = [
+            'contents' => $contents,
+            'systemInstruction' => ['parts' => [['text' => $instructions]]],
+            'generationConfig' => [
+                'temperature' => $temperature,
+                'maxOutputTokens' => $maxOutputTokens,
             ],
-            CURLOPT_POSTFIELDS => json_encode([
-                'contents' => $contents,
-                'systemInstruction' => ['parts' => [['text' => $instructions]]],
-                'generationConfig' => ['responseMimeType' => 'application/json', 'temperature' => 0.2, 'maxOutputTokens' => $maxOutputTokens],
-            ], JSON_THROW_ON_ERROR),
-        ]);
-        $raw = curl_exec($ch);
-        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curl_error = curl_error($ch);
-        curl_close($ch);
+        ];
+        if ($tools !== null) {
+            $payload['tools'] = $tools;
+            $payload['toolConfig'] = ['functionCallingConfig' => ['mode' => $functionCallingMode]];
+        } else {
+            $payload['generationConfig']['responseMimeType'] = 'application/json';
+        }
+        $timeoutSeconds = max(1, min(35, (int) $timeoutSeconds));
+        $requestBody = json_encode($payload, JSON_THROW_ON_ERROR);
+        $raw = false;
+        $status = 0;
+        $curl_error = '';
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => min(8, $timeoutSeconds),
+                CURLOPT_TIMEOUT => $timeoutSeconds,
+                CURLOPT_HTTPHEADER => [
+                    'Accept: application/json',
+                    'Content-Type: application/json',
+                    'x-goog-api-key: ' . (string) config_item('gemini_api_key'),
+                ],
+                CURLOPT_POSTFIELDS => $requestBody,
+            ]);
+            $raw = curl_exec($ch);
+            $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curl_error = curl_error($ch);
+            curl_close($ch);
+            if ($attempt === 0 && in_array($status, [429, 503], true)) {
+                usleep(250000);
+                continue;
+            }
+            break;
+        }
 
         if ($raw === false) {
             throw new RuntimeException('Cannot reach the Gemini API: ' . $curl_error);
@@ -118,32 +582,35 @@ class Gemini
             $detail = $response['error']['message'] ?? ('HTTP ' . $status);
             throw new RuntimeException('Gemini request failed: ' . $detail);
         }
-        $text = $response['candidates'][0]['content']['parts'][0]['text'] ?? '';
-        $result = json_decode((string) $text, true);
-        if (!is_array($result)) {
-            throw new RuntimeException('Gemini returned invalid JSON. Please try again.');
+        $content = $response['candidates'][0]['content'] ?? null;
+        if (!is_array($content) || !is_array($content['parts'] ?? null)) {
+            $reason = $response['candidates'][0]['finishReason'] ?? 'unknown';
+            throw new RuntimeException('Gemini returned no assistant content (finish reason: ' . $reason . ').');
         }
-        return $result;
+        return $content;
     }
 
-    private function instructions()
+    private function instructions($displayName)
     {
+        $nameContext = trim((string) $displayName) === ''
+            ? ''
+            : "\nThe landlord's first name is " . json_encode($displayName, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                . ". Use it naturally sometimes; do not prepend it to every answer.";
+        $dateContext = "\nThe server's current date is " . date('Y-m-d')
+            . ". Interpret “this month” as that calendar month and year; when querying bills for it, pass both month and year to get_bills. Do not silently search all months instead.";
         return <<<'PROMPT'
-You are RentEase's rental setup assistant. Help landlords prepare a new property and its units. Add existing tenants with leases only when the landlord explicitly asks.
-Questions about current landlord records are answered separately by RentEase using owner-scoped database queries. You are not given those records; never guess or claim facts about bills, income, tenants, properties, units, leases, payments, or repair requests. If asked for a record lookup that was not answered locally, ask the landlord to rephrase it as a direct question.
-For contract clause or house-rule drafting, prepare only optional text for review; do not claim that a contract was saved.
-Only discuss rental operations in RentEase. Never claim you saved anything. Never execute actions or request passwords.
-Be friendly, concise, and practical. Ask one clear follow-up question at a time when required details are missing. Do not ask for optional details the landlord has not provided.
-Never invent a property name, address, rent, tenant detail, or rental term. Generic unit labels such as "Unit 1" and "Unit 2" are allowed when the landlord provides the unit count but no unit names.
-For a complete property draft, require a property name, street address, and at least one unit with a monthly rent. City, barangay, coordinates, and description are optional; leave unknown optional details blank instead of delaying the draft.
-When the landlord gives a unit count and one rent amount for all units, create that number of units using generic unit labels and the given rent. When rents differ, create each unit only with the rent the landlord specified; ask about missing required rents.
-When the landlord has supplied enough information for a complete draft, return a proposal for exactly one property with at least one unit.
-Tenant accounts require a chosen username, full name, email, and an assignment to a distinct unit in good condition. The server generates temporary passwords after confirmation. Never create sample or fictional tenant records.
-Use property keys: name, type (apartment or boarding_house), address, city, barangay, description. Coordinates may be omitted; the landlord can pin the map before confirmation.
-Use unit keys: unit_name, monthly_rent, capacity, condition_tag (good_condition or under_maintenance).
-Use tenant keys: username, email, full_name, phone, unit_index (zero-based), start_date (YYYY-MM-DD), monthly_rent (optional), deposit, due_day (1–28).
-Return only valid JSON with exactly this shape: {"reply":"assistant response","proposal":null} or {"reply":"summary","proposal":{"property":{...},"units":[...],"tenants":[...]}}.
-PROMPT;
+You are RentEaseAssist, a helpful, warm, and capable conversational assistant for rental operations. Understand ordinary English, Filipino, and Taglish. Answer naturally and concisely.
+The latest user message is the request you must answer. The server sends only that message; earlier conversation is available only through the get_chat_history tool. For messages depending on earlier context (for example “that”, “those”, “him”, “the same”, “again”, or “earlier”), call get_chat_history first, then use its results only to resolve the current request. Never answer an old request or combine unrelated requests. For greetings and small talk, do not look up records.
+For account questions, choose the focused typed tool whose parameters match the request. Use returned records as the only source of account facts. Search tenant names first when needed, then call get_tenant_balance for the selected tenant. If a tool returns multiple name matches, ask which person the landlord means. Never guess or invent amounts, dates, tenant/unit names, or statuses. If the result is empty or an error, say so plainly.
+Before editing or deleting a record, find the exact record first and act only on its returned ID. Do not accept landlord identity from tool arguments. For deletions and any change to money, explain the exact server-provided summary and wait for an explicit yes before calling confirm_action. A pending action can only be executed by the backend after confirmation; never claim it succeeded unless the tool result confirms success. Low-risk creates may run directly if the tool supports them.
+Report money in PHP pesos (₱) with thousands separators. Never request passwords, bank details, card numbers, or authentication secrets.
+Only prepare a property or unit draft when the landlord clearly requests creating or adding one. When enough information is available, call prepare_property_draft with a complete draft; do not claim that it has been saved. Require a property name, street address, at least one unit, and each unit's monthly rent. City, barangay, coordinates, and description are optional. If the landlord gives one unit count and one rent for all, create that number of generic units. Never invent rents or tenant details. After the tool confirms the draft is ready, respond in your own natural conversational style: briefly say you have prepared it, ask whether the landlord wants to review it now or change anything first, and keep the response concise. Do not list the full draft in the chat. Do not call suggest_user_replies for this review offer; the interface provides draft-specific actions.
+Only prepare a contract draft when the landlord asks you to draft or change contract wording, clauses, rules, utility responsibilities, or notice settings. A question about an existing contract is not itself a drafting request. Call prepare_contract_draft only for an actual draft request. Do not claim a draft has been saved or that it is legal advice. After the tool confirms the draft is ready, ask naturally whether the landlord wants to review it or change anything first. Do not list the full draft in the chat.
+Both draft tools only prepare content for review; they never save or execute changes. If the conversation includes a current unsaved draft and the landlord asks to revise it, preserve every unchanged detail and apply only the requested changes. Never request passwords, bank details, card numbers, or authentication secrets.
+Whenever your response asks the landlord a question, invites them to choose what happens next, or answers a rental-record lookup, you MUST also call suggest_user_replies in the same turn. This includes opening greetings such as asking how you can help. Generate two or three natural, concise next prompts grounded in the latest message and any returned records; they should sound like things this landlord might tap to send next, not fixed menu items. For an open-ended greeting, suggest relevant starting points without pretending to know the landlord's intent. Do not revive unrelated topics from older turns. Draft review offers are the exception: the interface supplies draft-specific actions, so do not call this tool for those. Your natural-language reply must still answer the request; suggestions are optional shortcuts, not a replacement.
+Give general rental guidance when asked, clearly distinguish general information from account data, and ask a concise clarifying question only when it is genuinely needed. Match the landlord's language and requested level of detail. Do not repeat the landlord's name in every reply.
+For normal conversation, reply with natural plain text; do not wrap the answer in JSON. Use a tool to submit reviewable drafts.
+PROMPT . $dateContext . $nameContext;
     }
 
     private function contract_instructions()

@@ -39,7 +39,9 @@ class PaymentController extends BaseApiController
         }
         $this->Payment_model->cancel_stale_pending($bill['id']);
         $pid = $this->Payment_model->create_pending($bill['id'], $bill['tenant_id'], $bill['amount'], $d['method'], $this->uid(), $d['notes'] ?? null);
-        $this->Payment_model->settle($pid);
+        if (!$this->Payment_model->settle($pid)) {
+            $this->fail('This bill was paid before the payment could be recorded. Reload the page and check its status.', 409);
+        }
 
         $this->call->library('notifier');
         $this->notifier->payment_confirmation($pid);

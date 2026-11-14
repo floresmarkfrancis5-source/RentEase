@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Modal, PageHead, State, StatusPill, Table, useLoad, useToast } from '../../components/ui'
 import { api, dateFmt } from '../../lib/api'
-import { AuthImage, PhotoLightbox, RepairPhotoThumbnails, RepairPhotoBadge, compressImageFile } from '../../components/PhotoLightbox'
+import { PhotoLightbox, RepairFeaturedPhoto, RepairPhotoThumbnails, compressImageFile } from '../../components/PhotoLightbox'
 import ViewToolbar from '../../components/ViewToolbar'
 
 const REPAIR_CATEGORIES = [
@@ -149,7 +149,7 @@ function NewRepairModal({ onClose, onSuccess }) {
               if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files)
             }}
           >
-            <span className="repair-dropzone__icon">📸</span>
+            <span className="repair-dropzone__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v11H3V8a1 1 0 0 1 1-1Z" /><circle cx="12" cy="13" r="3.5" /></svg></span>
             <p className="repair-dropzone__title">
               Click to browse, drag & drop, or paste <span className="repair-dropzone__kbd">Ctrl+V</span>
             </p>
@@ -281,9 +281,17 @@ export default function Maintenance() {
   const [toast, flash] = useToast()
 
   const rawData = data || []
+  const requestCounts = rawData.reduce((counts, request) => {
+    counts.all += 1
+    if (request.status === 'pending') counts.pending += 1
+    if (request.status === 'in_progress') counts.inProgress += 1
+    if (request.status === 'resolved') counts.resolved += 1
+    return counts
+  }, { all: 0, pending: 0, inProgress: 0, resolved: 0 })
 
   const deleteRequest = async (r) => {
-    if (!window.confirm(`Cancel and delete maintenance request "${r.title}"?`)) return
+    const action = r.status === 'pending' ? 'cancel and delete' : 'delete'
+    if (!window.confirm(`Are you sure you want to ${action} "${r.title}"? This will permanently remove the request and its photos.`)) return
     try {
       const res = await api(`/api/my/maintenance/${r.id}`, {
         method: 'DELETE',
@@ -299,9 +307,8 @@ export default function Maintenance() {
   const filteredData = (rawData || []).filter((r) => {
     if (search.trim()) {
       const q = search.toLowerCase()
-      const match =
-        r.title.toLowerCase().includes(q) ||
-        (r.description && r.description.toLowerCase().includes(q))
+      const match = [r.title, r.description, r.admin_notes]
+        .some((value) => String(value || '').toLowerCase().includes(q))
       if (!match) return false
     }
     if (statusFilter !== 'all' && r.status !== statusFilter) return false
@@ -327,6 +334,27 @@ export default function Maintenance() {
       )}
       {!leaseSummary.loading && !leaseSummary.error && !leaseSummary.data?.lease && (
         <p className="alert" role="status">A repair request is available after your lease starts and you have an assigned unit. Contact your landlord if you need help before move-in.</p>
+      )}
+
+      {data && !error && rawData.length > 0 && (
+        <section className="tenant-repair-summary" aria-label="Repair request overview">
+          {[
+            ['all', 'All requests', requestCounts.all, 'Every request'],
+            ['pending', 'Pending', requestCounts.pending, 'Waiting for review'],
+            ['in_progress', 'In progress', requestCounts.inProgress, 'Work underway'],
+            ['resolved', 'Resolved', requestCounts.resolved, 'Completed requests'],
+          ].map(([filter, label, count, hint]) => (
+            <button
+              type="button"
+              key={filter}
+              className={`tenant-repair-summary__item${statusFilter === filter ? ' is-active' : ''}${filter === 'resolved' ? ' is-resolved' : filter === 'in_progress' ? ' is-progress' : ''}`}
+              onClick={() => setStatusFilter(filter)}
+              aria-pressed={statusFilter === filter}
+            >
+              <span>{label}</span><strong>{count}</strong><small>{hint}</small>
+            </button>
+          ))}
+        </section>
       )}
 
       <State loading={loading} error={error} empty={rawData.length === 0 && 'No requests yet.'}>
@@ -357,59 +385,78 @@ export default function Maintenance() {
             />
 
             {filteredData.length === 0 ? (
-              <div style={{ padding: '30px 20px', textAlign: 'center', background: 'var(--page-raised)', borderRadius: '12px', border: '1px solid var(--page-line)' }}>
-                <p className="muted" style={{ margin: 0 }}>No repair requests match your filters.</p>
+              <div className="tenant-repair-empty">
+                <strong>No repair requests match these filters</strong>
+                <span>Try another status or clear your search to see your requests.</span>
+                <button type="button" className="btn btn--ghost btn--sm" onClick={() => { setSearch(''); setStatusFilter('all') }}>Clear filters</button>
               </div>
             ) : viewMode === 'grid' ? (
-              <div className="cards-grid">
-                {filteredData.map((r) => (
-                  <div key={r.id} className="request-card">
+              <div className="cards-grid tenant-repair-grid">
+                {filteredData.map((r) => {
+                  const photos = r.images || []
+                  const reportedPhotos = photos.filter((photo) => photo.uploader_role !== 'landlord')
+                  const morePhotos = [...reportedPhotos.slice(1), ...photos.filter((photo) => photo.uploader_role === 'landlord')]
+                  return (
+                    <article key={r.id} className={`request-card tenant-repair-card${r.priority === 'high' && r.status !== 'resolved' ? ' is-urgent' : ''}${r.status === 'resolved' ? ' is-resolved' : ''}`}>
+                    <RepairFeaturedPhoto images={photos} onSelectImage={setActivePhoto} />
                     <div className="request-card__head">
-                      <div>
-                        <h4 className="request-card__title">{r.title}</h4>
-                        <span className="request-card__sub">Sent {dateFmt(r.created_at)}</span>
+                      <div className="tenant-repair-card__identity">
+                        <h3 className="request-card__title">{r.title}</h3>
+                        <span className="request-card__sub">Submitted {dateFmt(r.created_at)}</span>
                       </div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <div className="tenant-repair-card__badges">
                         <StatusPill value={r.priority === 'high' ? 'urgent' : r.priority} />
                         <StatusPill value={r.status} />
                       </div>
                     </div>
 
-                    <div className="request-card__body">
-                      {r.description}
-                    </div>
+                    <p className="request-card__body tenant-repair-card__description">{r.description}</p>
 
-                    {r.images && r.images.length > 0 && (
-                      <div style={{ padding: '10px 12px', background: 'var(--page-line)', borderRadius: '8px' }}>
-                        <small className="muted" style={{ display: 'block', marginBottom: 6 }}>
-                          Attached photos ({r.images.length}):
-                        </small>
-                        <RepairPhotoThumbnails images={r.images} onSelectImage={setActivePhoto} maxPreview={4} />
-                      </div>
+                    {(morePhotos.length > 0 || r.admin_notes) && (
+                      <details className="tenant-repair-card__updates">
+                        <summary>
+                          Additional updates
+                          <span>{[morePhotos.length ? `${morePhotos.length} more photo${morePhotos.length === 1 ? '' : 's'}` : null, r.admin_notes ? 'landlord note' : null].filter(Boolean).join(' · ')}</span>
+                        </summary>
+                        <div className="tenant-repair-card__update-content">
+                          {r.admin_notes && (
+                            <div className="tenant-repair-card__landlord-note">
+                              <strong>Note from landlord</strong>
+                              <p>{r.admin_notes}</p>
+                            </div>
+                          )}
+                          {reportedPhotos.length > 1 && (
+                            <div className="tenant-repair-card__photos">
+                              <strong>More photos from you</strong>
+                              <RepairPhotoThumbnails images={reportedPhotos.slice(1)} onSelectImage={setActivePhoto} maxPreview={4} />
+                            </div>
+                          )}
+                          {photos.some((photo) => photo.uploader_role === 'landlord') && (
+                            <div className="tenant-repair-card__photos">
+                              <strong>Landlord resolution photos</strong>
+                              <RepairPhotoThumbnails images={photos.filter((photo) => photo.uploader_role === 'landlord')} onSelectImage={setActivePhoto} maxPreview={4} />
+                            </div>
+                          )}
+                        </div>
+                      </details>
                     )}
 
-                    {r.admin_notes && (
-                      <div style={{ fontSize: '.84rem', color: 'var(--page-text)', background: 'color-mix(in srgb, var(--accent) 8%, var(--page-raised))', padding: '10px 12px', borderRadius: '8px', border: '1px solid color-mix(in srgb, var(--accent) 25%, var(--page-line))' }}>
-                        <strong style={{ display: 'block', fontSize: '.8rem', color: 'var(--accent)', marginBottom: 2 }}>Note from Landlord:</strong>
-                        {r.admin_notes}
-                      </div>
-                    )}
-
-                    <div className="request-card__foot">
-                      <button className="btn btn--ghost btn--sm" onClick={() => setDetailItem(r)}>
-                        View Details
+                    <div className="request-card__foot tenant-repair-card__foot">
+                      <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDetailItem(r)}>
+                        View details
                       </button>
                       <button
-                        className="btn btn--ghost btn--sm"
-                        style={{ color: '#ef4444', marginLeft: 'auto' }}
+                        type="button"
+                        className="btn btn--ghost btn--sm tenant-repair-card__delete"
                         onClick={() => deleteRequest(r)}
-                        title="Cancel & delete request"
+                        title={r.status === 'pending' ? 'Cancel and delete request' : 'Delete request'}
                       >
-                        🗑️ {r.status === 'pending' ? 'Cancel' : 'Delete'}
+                        {r.status === 'pending' ? 'Cancel request' : 'Delete request'}
                       </button>
                     </div>
-                  </div>
-                ))}
+                    </article>
+                  )
+                })}
               </div>
             ) : (
               <Table
@@ -419,41 +466,31 @@ export default function Maintenance() {
                     key: 'title',
                     label: 'Request',
                     render: (r) => (
-                      <>
+                      <div className="tenant-repair-table__request">
                         <strong>{r.title}</strong>
-                        <br />
                         <small className="muted">{r.description}</small>
-                      </>
+                      </div>
                     ),
-                  },
-                  {
-                    key: 'photos',
-                    label: 'Photos',
-                    render: (r) => <RepairPhotoThumbnails images={r.images} onSelectImage={setActivePhoto} maxPreview={3} />,
                   },
                   { key: 'priority', label: 'Priority', render: (r) => <StatusPill value={r.priority === 'high' ? 'urgent' : r.priority} /> },
                   { key: 'status', label: 'Status', render: (r) => <StatusPill value={r.status} /> },
-                  {
-                    key: 'admin_notes',
-                    label: 'Landlord note',
-                    render: (r) => r.admin_notes ? <span>{r.admin_notes}</span> : <span className="muted">—</span>,
-                  },
+                  { key: 'updates', label: 'Updates', render: (r) => <span className="muted">{[r.images?.length ? `${r.images.length} photo${r.images.length === 1 ? '' : 's'}` : null, r.admin_notes ? 'Landlord note' : null].filter(Boolean).join(' · ') || '—'}</span> },
                   { key: 'created_at', label: 'Sent', render: (r) => dateFmt(r.created_at) },
                 ]}
                 actions={(r) => (
-                  <>
-                    <button className="btn btn--ghost btn--sm" onClick={() => setDetailItem(r)}>
+                  <div className="tenant-repair-row-actions">
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={() => setDetailItem(r)}>
                       Details
                     </button>
                     <button
-                      className="btn btn--ghost btn--sm"
-                      style={{ color: '#ef4444' }}
+                      type="button"
+                      className="btn btn--ghost btn--sm tenant-repair-card__delete"
                       onClick={() => deleteRequest(r)}
-                      title="Cancel & delete request"
+                      title={r.status === 'pending' ? 'Cancel and delete request' : 'Delete request'}
                     >
-                      Delete
+                      {r.status === 'pending' ? 'Cancel request' : 'Delete request'}
                     </button>
-                  </>
+                  </div>
                 )}
               />
             )}

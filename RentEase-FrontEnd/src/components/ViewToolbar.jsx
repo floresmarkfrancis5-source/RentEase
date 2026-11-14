@@ -21,10 +21,13 @@ export default function ViewToolbar({
       <div className="view-toolbar__left">
         {onSearchChange && (
           <div className="view-toolbar__search">
-            <span className="view-toolbar__search-icon">🔍</span>
+            <span className="view-toolbar__search-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 4.5 4.5" /></svg>
+            </span>
             <input
               type="text"
               placeholder={t(searchPlaceholder)}
+              aria-label={t(searchPlaceholder)}
               value={search}
               onChange={(e) => onSearchChange(e.target.value)}
             />
@@ -71,7 +74,7 @@ export default function ViewToolbar({
               onClick={() => onViewChange('grid')}
               title={t('Grid / Icons view')}
             >
-              <span>田</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
               <span>{t('Icons')}</span>
             </button>
             <button
@@ -80,7 +83,7 @@ export default function ViewToolbar({
               onClick={() => onViewChange('list')}
               title={t('List / Table view')}
             >
-              <span>☰</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
               <span>{t('List')}</span>
             </button>
           </div>
