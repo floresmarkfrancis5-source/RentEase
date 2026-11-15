@@ -240,11 +240,27 @@ class TenantController extends BaseApiController
     public function reset_password($id)
     {
         $this->api->require_method('POST');
-        $this->not_found_unless($this->User_model->find_tenant($id, $this->uid()), 'Tenant');
+        $tenant = $this->not_found_unless($this->User_model->find_tenant($id, $this->uid()), 'Tenant');
+
+        // Try to send a password reset link to the tenant's email first
+        $this->call->library('password_reset');
+        if ($this->password_reset->configured()) {
+            $status = $this->password_reset->send_to_user($tenant);
+            if ($status === 'sent') {
+                $this->ok(['message' => 'A password reset link has been sent to ' . $tenant['email'] . '. The link expires in 30 minutes.', 'sent_by_email' => true]);
+                return;
+            }
+        }
+
+        // Fallback: generate a temporary password the landlord can share manually
         $pw = $this->random_password();
         $this->User_model->update_user($id, ['password' => password_hash($pw, PASSWORD_DEFAULT), 'must_change_password' => 1]);
         $this->User_model->delete_refresh_tokens($id);
-        $this->ok(['message' => 'Password reset', 'temporary_password' => $pw]);
+        $this->ok([
+            'message'            => 'Email delivery is not available. Share this temporary password with the tenant securely. They will be required to change it on first login.',
+            'sent_by_email'      => false,
+            'temporary_password' => $pw,
+        ]);
     }
 
     public function reassign_unit($id)

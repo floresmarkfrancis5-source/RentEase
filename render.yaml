@@ -74,6 +74,8 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
+      - key: BREVO_API_KEY
+        sync: false
       # Cross-origin links
       - key: CORS_ORIGIN
         sync: false

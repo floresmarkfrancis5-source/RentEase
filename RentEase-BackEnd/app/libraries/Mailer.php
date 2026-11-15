@@ -20,7 +20,54 @@ class Mailer
 
     public function configured()
     {
-        return (string) config_item('mailer_smtp_host') !== '' && class_exists('PHPMailer\\PHPMailer\\PHPMailer');
+        // Brevo HTTPS API (preferred on Render Free) OR classic SMTP
+        return (string) config_item('brevo_api_key') !== ''
+            || ((string) config_item('mailer_smtp_host') !== '' && class_exists('PHPMailer\\PHPMailer\\PHPMailer'));
+    }
+
+    /**
+     * Send via Brevo HTTPS REST API (port 443 – works on Render Free).
+     * Returns 'sent' on HTTP 2xx, 'failed' otherwise.
+     */
+    private function _brevo_send($to, $subject, $html)
+    {
+        $api_key   = (string) config_item('brevo_api_key');
+        $from_name = (string) config_item('mailer_from_name') ?: 'RentEase';
+        $from_mail = (string) config_item('mailer_from') ?: 'no-reply@rentease.local';
+
+        $payload = json_encode([
+            'sender'      => ['name' => $from_name, 'email' => $from_mail],
+            'to'          => [['email' => $to]],
+            'subject'     => $subject,
+            'htmlContent' => $html,
+        ], JSON_UNESCAPED_UNICODE);
+
+        $ch = curl_init('https://api.brevo.com/v3/smtp/email');
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_HTTPHEADER     => [
+                'api-key: ' . $api_key,
+                'Content-Type: application/json',
+                'Accept: application/json',
+            ],
+        ]);
+        $response  = curl_exec($ch);
+        $http_code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_err  = curl_error($ch);
+        curl_close($ch);
+
+        if ($curl_err !== '') {
+            error_log('RentEase Brevo curl error: ' . $curl_err);
+            return 'failed';
+        }
+        if ($http_code < 200 || $http_code >= 300) {
+            error_log('RentEase Brevo HTTP ' . $http_code . ': ' . $response);
+            return 'failed';
+        }
+        return 'sent';
     }
 
     /**
@@ -34,6 +81,14 @@ class Mailer
         if (!$this->configured()) {
             $log->log($user_id, $type, $related_id, $to, $subject, 'skipped', 'SMTP is not configured');
             return 'skipped';
+        }
+
+        // If Brevo API key is set, send synchronously via HTTPS (no ports, works on Render Free)
+        if ((string) config_item('brevo_api_key') !== '') {
+            $status = $this->_brevo_send($to, $subject, $html);
+            $log->log($user_id, $type, $related_id, $to, $subject, $status,
+                $status === 'failed' ? 'Brevo API delivery failed – check error_log' : null);
+            return $status;
         }
 
         // Asynchronous background dispatch (prevents Gmail SMTP network round-trips from freezing PHP)

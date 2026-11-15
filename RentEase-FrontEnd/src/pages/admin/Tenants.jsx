@@ -259,23 +259,35 @@ function NewTenantForm({ units, onSubmit, onClose }) {
   )
 }
 
-function Credentials({ username, email, password, activation_url, invitation_email_status, onClose }) {
+function Credentials({ username, email, password, activation_url, invitation_email_status, reset_fallback, onClose }) {
   const [copied, setCopied] = useState(false)
   const copyLink = () => {
     if (activation_url) { navigator.clipboard?.writeText(activation_url); setCopied(true); setTimeout(() => setCopied(false), 2000) }
   }
+
+  let headerMessage
+  if (reset_fallback) {
+    headerMessage = (
+      <p className="alert alert--error">
+        Email delivery is not set up. Share this <strong>temporary password</strong> with <strong>{email}</strong> securely — they will be asked to change it on first login.
+      </p>
+    )
+  } else if (activation_url && ['failed', 'skipped'].includes(invitation_email_status)) {
+    headerMessage = <p className="alert alert--error">The tenant account was created, but the invitation email could not be sent. Share the activation link below or resend the invitation from the tenant list.</p>
+  } else if (activation_url) {
+    headerMessage = <p>The tenant can use the activation link below to verify their account and choose a password. If the email does not arrive, share the link or resend the invitation from the tenant list.</p>
+  } else {
+    headerMessage = <p>Share these sign-in details with <strong>{email}</strong>.</p>
+  }
+
   return (
-    <Modal title="Tenant activation & credentials" onClose={onClose}>
-      {activation_url && ['failed', 'skipped'].includes(invitation_email_status)
-        ? <p className="alert alert--error">The tenant account was created, but the invitation email could not be sent. Share the activation link below or resend the invitation from the tenant list.</p>
-        : activation_url
-          ? <p>The tenant can use the activation link below to verify their account and choose a password. If the email does not arrive, share the link or resend the invitation from the tenant list.</p>
-          : <p>Share these sign-in details with <strong>{email}</strong>.</p>}
+    <Modal title={reset_fallback ? 'Temporary password' : 'Tenant activation & credentials'} onClose={onClose}>
+      {headerMessage}
       <div className="secret" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '8px 14px', alignItems: 'center' }}>
         <span>Username</span><code>{username}</code>
         <span>Email</span><code>{email}</code>
         {activation_url && (<><span>Activation link</span><code style={{ wordBreak: 'break-all', fontSize: '.78rem' }}>{activation_url}</code></>)}
-        {password && (<><span>Backup password</span><code>{password}</code></>)}
+        {password && (<><span>{reset_fallback ? 'Temporary password' : 'Backup password'}</span><code>{password}</code></>)}
       </div>
       <div className="modal__foot" style={{ marginTop: 18 }}>
         {activation_url && (
@@ -425,7 +437,11 @@ export default function Tenants() {
     if (!window.confirm(`Reset the password for ${t.full_name}?`)) return
     try {
       const r = await api(`/api/admin/tenants/${t.id}/reset-password`, { method: 'POST', auth: true, body: {} })
-      setSecret({ username: t.username, email: t.email, password: r.temporary_password })
+      if (r.sent_by_email) {
+        flash(r.message)
+      } else {
+        setSecret({ username: t.username, email: t.email, password: r.temporary_password, reset_fallback: true })
+      }
     } catch (e) { flash(e.message, 'bad') }
   }
 
