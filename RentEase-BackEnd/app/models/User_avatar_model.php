@@ -1,10 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * User_avatar_model - profile pictures (table: user_avatars), one row per user.
- * The browser shrinks the picture to a small square first; the server re-checks everything.
- */
 class User_avatar_model extends Model
 {
     protected $table = 'user_avatars';
@@ -26,7 +22,7 @@ class User_avatar_model extends Model
         if (strlen($bin) > self::MAX_BYTES) {
             return [null, null, 'The picture is too large (max ' . round(self::MAX_BYTES / 1024) . ' KB).'];
         }
-        $info = @getimagesizefromstring($bin);   // trust the bytes, not the label
+        $info = @getimagesizefromstring($bin);
         if (!$info || !in_array($info['mime'], self::MIMES, true) || $info['mime'] !== $m[1]) {
             return [null, null, 'That file is not a valid PNG, JPG or WebP image.'];
         }

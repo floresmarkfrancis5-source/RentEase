@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Property_model - apartments / boarding houses (table: properties). */
 class Property_model extends Model
 {
     protected $table = 'properties';

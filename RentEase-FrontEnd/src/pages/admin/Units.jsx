@@ -138,8 +138,7 @@ export default function Units() {
     return result
   }, [rawUnits, search, propertyFilter, occupancyFilter, needsAttentionOnly, sortBy])
 
-  // Group filtered units by property (preserves sort order in Icons/Grid view)
-  const groupedByProperty = useMemo(() => {
+const groupedByProperty = useMemo(() => {
     const map = new Map()
     for (const u of filteredUnits) {
       const propKey = String(u.property_id || u.property_name)
@@ -347,7 +346,7 @@ export default function Units() {
         )}
       </State>
 
-      {/* Unit details with edit and archive actions. */}
+      {}
       {inspectUnit && (
         <UnitDetailModal
           unit={inspectUnit}
@@ -378,7 +377,7 @@ export default function Units() {
         </Modal>
       )}
 
-      {/* UNIT EDIT / ADD FORM MODAL */}
+      {}
       {edit && (
         <UnitForm
           key={edit.id || 'new'}

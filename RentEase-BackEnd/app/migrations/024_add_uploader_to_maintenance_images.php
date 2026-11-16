@@ -1,9 +1,5 @@
 <?php
 
-/**
- * RentEase - add uploaded_by and uploader_role to maintenance_images
- * Allows both tenants (issue photos) and landlords (resolution/repair proof photos) to attach photos.
- */
 class Add_uploader_to_maintenance_images {
 
     private $_lava;

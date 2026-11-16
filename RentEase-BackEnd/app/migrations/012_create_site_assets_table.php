@@ -1,10 +1,5 @@
 <?php
 
-/**
- * RentEase - site_assets table
- * Logo, homepage hero and login images uploaded by the admin. They are stored in the database (not on
- * disk) because Render's free web service has an ephemeral file system - uploads would vanish on every deploy.
- */
 class Create_site_assets_table {
 
     private $_lava;

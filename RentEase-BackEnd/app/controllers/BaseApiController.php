@@ -1,9 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * BaseApiController - shared helpers for every RentEase API controller (not routed itself).
- */
 class BaseApiController extends Controller
 {
     public function __construct()
@@ -13,7 +10,6 @@ class BaseApiController extends Controller
         $this->call->library('api');
     }
 
-    /** Api::body() HTML-encodes strings; React already escapes output, so decode here. */
     protected function input()
     {
         $body = $this->api->body();
@@ -127,12 +123,6 @@ class BaseApiController extends Controller
     protected function user()  { return Req_context::user(); }
     protected function role()  { return Req_context::role(); }
 
-    /**
-     * Mini validator.  $rules = ['field' => ['type' => 'string|email|int|decimal|date|enum|bool', ...]]
-     * options: required, nullable, min, max, values (enum), default (when missing & not partial)
-     * $partial = true  -> only validate keys that were actually sent (PATCH).
-     * Responds 422 with per-field messages; returns the cleaned values.
-     */
     protected function validate(array $in, array $rules, $partial = false)
     {
         $clean  = [];

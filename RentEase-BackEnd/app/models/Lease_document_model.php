@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Private PDF attachments associated with landlord-owned lease records. */
 class Lease_document_model extends Model
 {
     protected $table = 'lease_documents';

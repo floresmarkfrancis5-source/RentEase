@@ -1,8 +1,5 @@
 <?php
 
-/**
- * RentEase - superadmin accounts and single-use email password reset links.
- */
 class Superadmin_and_password_reset
 {
     private $_lava;

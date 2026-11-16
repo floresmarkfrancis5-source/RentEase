@@ -1,13 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * Google_auth - verifies the ID token that "Sign in with Google" gives the React app.
- * The token is checked by Google's tokeninfo endpoint; we then confirm it was issued for OUR client id,
- * is not expired and carries a verified e-mail address.
- *
- * Settings are loaded from app/config/google_auth.php (values are supplied through .env).
- */
 class Google_auth
 {
     public function configured()
@@ -15,7 +8,6 @@ class Google_auth
         return (string) config_item('google_auth_client_id') !== '';
     }
 
-    /** @return array|null ['sub' => , 'email' => , 'name' => ] or null when the token is not acceptable */
     public function verify($id_token)
     {
         if (!$this->configured() || !is_string($id_token) || strlen($id_token) < 20 || strlen($id_token) > 4096) {

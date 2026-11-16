@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** InAppNotificationController - role-scoped notifications for the current account. */
 class InAppNotificationController extends BaseApiController
 {
     private const SIDEBAR_SECTIONS = [

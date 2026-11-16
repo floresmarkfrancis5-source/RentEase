@@ -59,7 +59,6 @@ function Text({ label, name, draft, set, errors, multiline, max, placeholder, hi
   )
 }
 
-
 const SLOTS = [
   { slot: 'logo', key: 'logo_url', label: 'Sidebar logo', hint: 'This logo appears only in your dashboard sidebar and your tenants’ sidebars. RentEase branding in the header stays unchanged.', maxSide: 512, maxBytes: 380 * 1024, keepAlpha: true },
   { slot: 'hero', key: 'hero_image_url', label: 'Tenant homepage image', hint: 'Your tenants see this image on their RentEase homepage. It does not replace the public RentEase information page.', maxSide: 1920, maxBytes: 2300 * 1024 },
@@ -139,8 +138,7 @@ function SettingsForm() {
     if (!touched) setDraft(saved)
   }, [saved, touched])
 
-  // Preview only this landlord's account theme and tenant homepage.
-  useEffect(() => {
+useEffect(() => {
     if (!dirty) return setPreview(null)
     const p = { ...draft }
     COLOR_KEYS.forEach((k) => { if (!HEX.test(p[k])) p[k] = saved[k] })
@@ -148,8 +146,7 @@ function SettingsForm() {
   }, [draft, dirty, saved, setPreview])
   useEffect(() => () => setPreview(null), [setPreview])
 
-  // Warn before closing the tab with unsaved edits.
-  useEffect(() => {
+useEffect(() => {
     if (!dirty) return
     const h = (e) => { e.preventDefault(); e.returnValue = '' }
     window.addEventListener('beforeunload', h)
@@ -349,6 +346,6 @@ function SettingsForm() {
 
 export default function AdminSettings() {
   const { ready } = useSettings()
-  // Wait for the first server response so the form never starts from stale cached values.
+
   return ready ? <SettingsForm /> : <p className="muted" role="status">Loading settings…</p>
 }

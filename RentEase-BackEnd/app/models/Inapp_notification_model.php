@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Inapp_notification_model - persistent notices shown in the signed-in user's header. */
 class Inapp_notification_model extends Model
 {
     protected $table = 'in_app_notifications';

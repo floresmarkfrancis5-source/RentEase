@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** EarlyMoveInController - tenant requests and landlord decisions for early lease starts. */
 class EarlyMoveInController extends BaseApiController
 {
     public function __construct()

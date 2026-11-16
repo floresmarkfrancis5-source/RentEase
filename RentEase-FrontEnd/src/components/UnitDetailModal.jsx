@@ -46,7 +46,7 @@ export default function UnitDetailModal({
             </div>
           )}
 
-          {/* Unit & Property Title */}
+          {}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
               <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>{unit.unit_name}</h3>
@@ -58,7 +58,7 @@ export default function UnitDetailModal({
             </p>
           </div>
 
-          {/* Key Metrics */}
+          {}
           <div className="unit-window-metrics">
             <div className="unit-window-metric-card">
               <small>Monthly Rent</small>
@@ -85,7 +85,7 @@ export default function UnitDetailModal({
             </p>
           )}
 
-          {/* Comparison with current lease if tenant */}
+          {}
           {currentLease && (
             <div style={{ padding: '12px 14px', background: 'var(--page-raised)', borderRadius: '10px', border: '1px solid var(--page-line)' }}>
               <strong style={{ fontSize: '.86rem', display: 'block', marginBottom: '4px' }}>
@@ -107,7 +107,7 @@ export default function UnitDetailModal({
             </div>
           )}
 
-          {/* Occupied tenant info if landlord view */}
+          {}
           {unit.tenant_name && (
             <div style={{ padding: '12px 14px', background: 'var(--page-raised)', borderRadius: '10px', border: '1px solid var(--page-line)' }}>
               <small style={{ color: 'var(--page-muted)', textTransform: 'uppercase', fontSize: '.72rem', letterSpacing: '.5px' }}>
@@ -121,7 +121,7 @@ export default function UnitDetailModal({
             </div>
           )}
 
-          {/* Description & Amenities */}
+          {}
           <div>
             <strong style={{ display: 'block', fontSize: '.88rem', marginBottom: '6px' }}>Description & Amenities</strong>
             {unit.notes ? (
@@ -141,7 +141,7 @@ export default function UnitDetailModal({
             </p>
           )}
 
-          {/* Modal Footer Actions */}
+          {}
           <div className="modal__foot" style={{ marginTop: '8px' }}>
             {secondaryLabel && onSecondaryAction && (
               <button

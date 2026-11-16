@@ -1,9 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * Site_asset_model - landlord-specific sidebar logos and tenant homepage hero images.
- */
 class Site_asset_model extends Model
 {
     protected $table = 'site_assets';
@@ -15,10 +12,6 @@ class Site_asset_model extends Model
     public const MIMES = ['image/png', 'image/jpeg', 'image/webp'];
     public const MAX_SIDE = 6000;
 
-    /**
-     * Validate a "data:image/...;base64,..." string.
-     * @return array [binary|null, mime|null, error|null]
-     */
     public function decode_data_url($key, $data_url)
     {
         if (!isset(self::KEYS[$key])) {
@@ -34,7 +27,6 @@ class Site_asset_model extends Model
         if (strlen($bin) > self::KEYS[$key]['max_bytes']) {
             return [null, null, 'The image is too large (max ' . round(self::KEYS[$key]['max_bytes'] / 1024) . ' KB after compression).'];
         }
-        // Trust the bytes, not the label: the real file type must be one we allow and match the declared one.
         $info = @getimagesizefromstring($bin);
         if (!$info || !in_array($info['mime'], self::MIMES, true) || $info['mime'] !== $m[1]) {
             return [null, null, 'That file is not a valid PNG, JPG or WebP image.'];
@@ -54,7 +46,6 @@ class Site_asset_model extends Model
         );
     }
 
-    /** @return array|null ['mime' => , 'data' => , 'byte_size' => , 'updated_at' => ] */
     public function get($key, $owner_id = null)
     {
         if ($owner_id === null) {

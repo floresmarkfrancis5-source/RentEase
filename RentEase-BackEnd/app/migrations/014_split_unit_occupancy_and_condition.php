@@ -1,8 +1,5 @@
 <?php
 
-/**
- * RentEase - separate lease-driven occupancy from unit condition.
- */
 class Split_unit_occupancy_and_condition {
 
     private $_lava;

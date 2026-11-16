@@ -13,7 +13,6 @@ import PublicAssistant from '../components/PublicAssistant'
 const MARQUEE = ['Monthly billing', 'Pay with GCash & card', 'Downloadable receipts', 'Email reminders', 'Repair requests', 'Property map']
 const TENANT_MARQUEE = ['View bills', 'Check payment status', 'Download receipts', 'Message your landlord', 'Repair requests', 'Move requests']
 
-/** Small "screenshots" drawn with markup, so no image files are needed. */
 const Mock = {
   Bill: () => (
     <div className="mock">

@@ -3,7 +3,6 @@ import { api } from '../lib/api'
 import { initials } from '../lib/brand'
 import { useAuth } from '../context/AuthContext'
 
-// Cache and deduplicate concurrent avatar fetches across multiple Avatar instances
 let sharedBlobUrl = ''
 let sharedBlobPromise = null
 let lastAvatarV = 0
@@ -30,11 +29,6 @@ function fetchSharedPhotoBlob(avatarV) {
   return sharedBlobPromise
 }
 
-/**
- * Round profile picture, or the person's initials when they have not uploaded one.
- * If a Cloudinary CDN URL (avatar_url) is present, it is rendered directly with zero backend calls.
- * Otherwise, only the currently logged-in user fetches their private local photo blob (deduplicated).
- */
 export default function Avatar({ user, large = false }) {
   const auth = useAuth()
   const currentUserId = auth?.user?.id
@@ -47,7 +41,7 @@ export default function Avatar({ user, large = false }) {
       setSrc(user.avatar_url)
       return undefined
     }
-    // Only the logged-in user can fetch their private local photo blob
+
     if (!currentUserId || (user?.id && user.id !== currentUserId)) {
       setSrc('')
       return undefined

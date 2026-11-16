@@ -7,7 +7,6 @@ import { useAuth } from '../context/AuthContext'
 import { api, dateFmt } from '../lib/api'
 import { compressImage } from '../lib/image'
 
-/** "My profile" - the same page for the landlord and for tenants. */
 export default function Profile() {
   const { user, updateUser } = useAuth()
   const [form, setForm] = useState({

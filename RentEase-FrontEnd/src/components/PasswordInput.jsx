@@ -1,6 +1,5 @@
 import { useId, useState } from 'react'
 
-/** Password box with a show/hide eye button. Pass the same props you would pass to <input>. */
 export default function PasswordInput({ id, ...rest }) {
   const auto = useId()
   const [show, setShow] = useState(false)

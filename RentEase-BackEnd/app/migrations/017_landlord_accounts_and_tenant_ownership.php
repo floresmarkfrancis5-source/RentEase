@@ -1,8 +1,5 @@
 <?php
 
-/**
- * RentEase - landlord self-registration, onboarding state, and tenant ownership.
- */
 class Landlord_accounts_and_tenant_ownership
 {
     private $_lava;

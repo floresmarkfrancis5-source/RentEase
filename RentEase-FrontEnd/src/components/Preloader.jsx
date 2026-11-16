@@ -6,7 +6,6 @@ import { reducedMotion } from './motion'
 const KEY = 'rentease-intro'
 const seen = () => { try { return sessionStorage.getItem(KEY) === '1' } catch { return true } }
 
-/** Short intro curtain, once per visit, only when the visitor lands on the home page. */
 export default function Preloader({ onDone }) {
   const { settings } = useSettings()
   const [phase, setPhase] = useState(() => (reducedMotion() || seen() ? 'gone' : 'show'))
@@ -14,7 +13,7 @@ export default function Preloader({ onDone }) {
 
   useEffect(() => {
     if (phase === 'gone') { onDone(); return undefined }
-    try { sessionStorage.setItem(KEY, '1') } catch { /* ignore */ }
+    try { sessionStorage.setItem(KEY, '1') } catch {  }
     const t1 = setTimeout(() => { setPhase('done'); onDone() }, 1900)
     const t2 = setTimeout(() => setPhase('gone'), 3000)
     return () => { clearTimeout(t1); clearTimeout(t2) }

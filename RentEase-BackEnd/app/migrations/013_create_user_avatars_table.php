@@ -1,10 +1,5 @@
 <?php
 
-/**
- * RentEase - user_avatars table
- * One profile picture per account (admin or tenant). Stored in the database, like the site images,
- * because Render's disk is ephemeral. Deleting the user deletes the picture (ON DELETE CASCADE).
- */
 class Create_user_avatars_table {
 
     private $_lava;

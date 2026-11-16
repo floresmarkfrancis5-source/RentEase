@@ -1,8 +1,5 @@
 <?php
 
-/**
- * RentEase - persistent landlord AI assistant conversations.
- */
 class Create_assistant_conversations
 {
     private $_lava;

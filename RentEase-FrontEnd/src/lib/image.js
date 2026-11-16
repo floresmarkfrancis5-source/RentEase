@@ -1,4 +1,4 @@
-// Shrinks a picture in the browser before upload so it always fits the API's limits.
+
 
 const loadBitmap = (file) =>
   new Promise((resolve, reject) => {
@@ -11,11 +11,6 @@ const loadBitmap = (file) =>
 
 const dataUrlBytes = (u) => Math.floor(((u.length - u.indexOf(',') - 1) * 3) / 4)
 
-/**
- * @param {File} file
- * @param {{maxSide:number, maxBytes:number, keepAlpha?:boolean, square?:boolean}} o  (square = crop the centre, for avatars)
- * @returns {Promise<string>} data URL (png / jpeg / webp) no larger than maxBytes
- */
 export async function compressImage(file, { maxSide, maxBytes, keepAlpha = false, square = false }) {
   if (!/^image\/(png|jpe?g|webp)$/i.test(file.type)) throw new Error('Choose a PNG, JPG or WebP picture.')
   const img = await loadBitmap(file)

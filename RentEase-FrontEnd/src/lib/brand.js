@@ -1,13 +1,11 @@
 import { API_URL } from './api'
 
-/** Uploaded images use an owner-scoped API URL; external links are used as-is. */
 export const assetUrl = (u) => {
   const v = String(u || '').trim()
   if (!v) return ''
   return v.startsWith('/api/') ? `${API_URL}${v}` : v
 }
 
-/** "RentEase" -> ["Rent","Ease"], "Casa Hana" -> ["Casa","Hana"], "Acme" -> ["", "Acme"] (the last part is highlighted). */
 export function splitBrand(name) {
   const n = String(name || '').trim()
   const words = n.split(/\s+/)
@@ -16,7 +14,6 @@ export function splitBrand(name) {
   return m ? [m[1], m[2]] : ['', n]
 }
 
-/** Headline -> two display lines: split on a newline, else after the first comma / dash. */
 export function splitHeadline(t) {
   const s = String(t || '').trim()
   const nl = s.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)

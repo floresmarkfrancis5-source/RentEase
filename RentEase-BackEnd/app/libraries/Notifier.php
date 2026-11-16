@@ -1,11 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * Notifier - builds and sends the four kinds of RentEase e-mail:
- * welcome, due-date reminder, payment confirmation (with PDF receipt) and maintenance update.
- * The HTML comes from app/views/emails/notification.php. Every method is safe to call: it never throws.
- */
 class Notifier
 {
     private $_lava;
@@ -138,7 +133,7 @@ class Notifier
             try {
                 $attachments[] = ['name' => $p['receipt_no'] . '.pdf', 'type' => 'application/pdf',
                                   'data' => $this->_lava->pdf->render('pdf/receipt', $this->receipt_data($p))];
-            } catch (Throwable $e) { /* e-mail still goes out without the attachment */ }
+            } catch (Throwable $e) { }
 
             $html = $this->render([
                 'title'    => 'Payment received - thank you!',
@@ -153,7 +148,7 @@ class Notifier
                 ],
             ]);
             $this->_lava->mailer->send($t['id'], 'payment_confirmation', $p['id'], $t['email'], 'Payment received - ' . $p['receipt_no'], $html, $attachments);
-        } catch (Throwable $e) { /* never break a payment */ }
+        } catch (Throwable $e) { }
     }
 
     public function maintenance_update($request_id)
@@ -178,7 +173,7 @@ class Notifier
                 'button_url'  => $this->frontend('/tenant/maintenance'),
             ]);
             $this->_lava->mailer->send($m['tenant_id'], 'maintenance_update', $m['id'], $m['tenant_email'], 'Repair request update: ' . $m['title'], $html);
-        } catch (Throwable $e) { /* ignore */ }
+        } catch (Throwable $e) { }
     }
 
     public function new_maintenance_request($request_id)
@@ -227,7 +222,7 @@ class Notifier
 
             $subject = 'New Repair Request: ' . $m['title'] . ' (' . $m['unit_name'] . ')';
             $this->_lava->mailer->send($landlord['id'], 'new_maintenance_request', $m['id'], $landlord['email'], $subject, $html);
-        } catch (Throwable $e) { /* email failure should never break request creation */ }
+        } catch (Throwable $e) { }
     }
 
     public function transfer_result($request_id)
@@ -245,7 +240,7 @@ class Notifier
                     : 'Your unit transfer request was declined.' . (!empty($r['admin_note']) ? ' Note: ' . $r['admin_note'] : ''),
                 $r['id']
             );
-        } catch (Throwable $e) { /* logged by the API request where relevant */ }
+        } catch (Throwable $e) { }
     }
 
     public function tenant_unit_reassigned($tenant_id, $old_unit_label, $new_unit_label, $new_rent, $notes = null)
@@ -281,10 +276,9 @@ class Notifier
             ]);
 
             $this->_lava->mailer->send($tenant_id, 'unit_reassigned', null, $u['email'], 'Notice of Unit Reassignment - RentEase', $html);
-        } catch (Throwable $e) { /* notification error should not break operation */ }
+        } catch (Throwable $e) { }
     }
 
-    /** Data used by the receipt view (shared with the PDF download endpoint). */
     public function receipt_data(array $p)
     {
         $bill = $this->_lava->Bill_model->find($p['bill_id']);

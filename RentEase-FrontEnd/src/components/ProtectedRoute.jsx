@@ -1,7 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
-/** role = 'superadmin' | 'admin' | 'tenant' | undefined (any signed-in user). */
 export default function ProtectedRoute({ children, role }) {
   const { user } = useAuth()
   const loc = useLocation()

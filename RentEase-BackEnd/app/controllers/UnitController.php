@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** UnitController (admin) - rooms/units inside a property. Occupied/vacant is driven by leases. */
 class UnitController extends BaseApiController
 {
     public function __construct()

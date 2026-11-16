@@ -1,30 +1,21 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * Tenant_invitation_model - secure, expiring invitation & email verification tokens for tenants.
- */
 class Tenant_invitation_model extends Model
 {
     protected $table = 'tenant_invitation_tokens';
 
-    /**
-     * Create a new 7-day invitation token for a tenant. Revokes any existing unused tokens.
-     * Returns ['token' => <raw_64_char_hex>, 'expires_at' => <datetime>]
-     */
     public function create_invitation($user_id)
     {
         $raw_token   = bin2hex(random_bytes(32));
         $token_hash  = hash('sha256', $raw_token);
-        $expires_at  = date('Y-m-d H:i:s', time() + 7 * 86400); // 7 days
+        $expires_at  = date('Y-m-d H:i:s', time() + 7 * 86400);
 
-        // Revoke any existing unused tokens for this user
         $this->db->table($this->table)
             ->where('user_id', (int) $user_id)
             ->where_null('used_at')
             ->update(['used_at' => date('Y-m-d H:i:s')]);
 
-        // Insert new token
         $this->db->table($this->table)->insert([
             'user_id'    => (int) $user_id,
             'token_hash' => $token_hash,
@@ -38,9 +29,6 @@ class Tenant_invitation_model extends Model
         ];
     }
 
-    /**
-     * Look up an unconsumed, unexpired token joined with user details.
-     */
     public function find_valid($token_hash, $lock = false)
     {
         $sql = "SELECT t.id, t.user_id, t.expires_at, t.created_at,
@@ -72,9 +60,6 @@ class Tenant_invitation_model extends Model
             ->update(['used_at' => date('Y-m-d H:i:s')]);
     }
 
-    /**
-     * Complete the activation: set password, mark email verified, clear must_change_password.
-     */
     public function complete_activation($token_hash, $new_password, User_model $user_model)
     {
         $this->db->transaction();
@@ -101,9 +86,6 @@ class Tenant_invitation_model extends Model
         }
     }
 
-    /**
-     * Complete activation via Google Sign-In for an invited tenant.
-     */
     public function complete_activation_google($token_hash, $google_id, User_model $user_model)
     {
         $this->db->transaction();

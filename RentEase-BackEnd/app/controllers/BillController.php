@@ -1,12 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * BillController - monthly billing.
- *   admin:  GET /api/admin/bills, GET /api/admin/bills/{id}, POST /api/admin/bills/generate,
- *           POST /api/admin/bills/{id}/remind, DELETE /api/admin/bills/{id}
- *   shared: GET /api/bills/{id}/statement   (PDF; the landlord, or the tenant who owns the bill)
- */
 class BillController extends BaseApiController
 {
     public function __construct()
@@ -37,7 +31,6 @@ class BillController extends BaseApiController
         $this->ok(['data' => $bill]);
     }
 
-    /** POST /api/admin/bills/generate  { "month": "2026-11" }  - safe to run twice (no duplicates). */
     public function generate()
     {
         $this->api->require_method('POST');
@@ -94,7 +87,6 @@ class BillController extends BaseApiController
         $this->ok(['message' => 'Bill deleted']);
     }
 
-    /** PATCH /api/admin/bills/{id} - adjust amount and/or notes on an unpaid bill */
     public function adjust($id)
     {
         $in = $this->input();
@@ -114,7 +106,7 @@ class BillController extends BaseApiController
         $this->api->require_method('GET');
         $bill = $this->not_found_unless($this->Bill_model->find($id, $this->admin() ? $this->uid() : null), 'Bill');
         if (!$this->admin() && (int) $bill['tenant_id'] !== $this->uid()) {
-            $this->fail('Bill not found.', 404);   // do not reveal that it exists
+            $this->fail('Bill not found.', 404);
         }
         $this->call->library('notifier');
         $this->call->library('pdf');

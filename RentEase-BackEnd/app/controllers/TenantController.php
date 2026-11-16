@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** TenantController (admin) - the landlord creates and manages tenant accounts. */
 class TenantController extends BaseApiController
 {
     public function __construct()
@@ -187,7 +186,7 @@ class TenantController extends BaseApiController
             'invitation_email_status' => $email_status,
         ];
         if ($generated) {
-            $res['temporary_password'] = $password;   // fallback so landlord can also hand it in person
+            $res['temporary_password'] = $password;
         }
         $this->ok($res, 201);
     }
@@ -242,7 +241,6 @@ class TenantController extends BaseApiController
         $this->api->require_method('POST');
         $tenant = $this->not_found_unless($this->User_model->find_tenant($id, $this->uid()), 'Tenant');
 
-        // Try to send a password reset link to the tenant's email first
         $this->call->library('password_reset');
         if ($this->password_reset->configured()) {
             $status = $this->password_reset->send_to_user($tenant);
@@ -252,7 +250,6 @@ class TenantController extends BaseApiController
             }
         }
 
-        // Fallback: generate a temporary password the landlord can share manually
         $pw = $this->random_password();
         $this->User_model->update_user($id, ['password' => password_hash($pw, PASSWORD_DEFAULT), 'must_change_password' => 1]);
         $this->User_model->delete_refresh_tokens($id);
@@ -300,13 +297,10 @@ class TenantController extends BaseApiController
 
         $this->db->transaction();
         try {
-            // 1. Set old unit to vacant
             $this->Unit_model->set_occupancy($old_unit_id, 'vacant');
 
-            // 2. Set new unit to occupied
             $this->Unit_model->set_occupancy($new_unit_id, 'occupied');
 
-            // 3. Update lease
             $this->db->raw(
                 "UPDATE leases 
                  SET unit_id = ?, monthly_rent = ?, estimated_annual_income = ?, updated_at = NOW()
@@ -314,7 +308,6 @@ class TenantController extends BaseApiController
                 [$new_unit_id, $newRent, $newRent * 12, (int) $activeLease['id']]
             );
 
-            // 4. Record lease event
             $oldUnitName = $oldUnit['unit_name'] ?? ('Unit #' . $old_unit_id);
             $newUnitName = $newUnit['unit_name'] . (isset($newUnit['property_name']) ? ' · ' . $newUnit['property_name'] : '');
             $reasonNote = !empty($data['notes']) ? ' Note: ' . $data['notes'] : '';
@@ -328,7 +321,6 @@ class TenantController extends BaseApiController
                 $this->uid()
             );
 
-            // 5. If tenant had any pending transfer request, resolve it as approved
             $this->db->raw(
                 "UPDATE unit_transfer_requests 
                  SET status = 'approved', decided_by = ?, decided_at = NOW(), admin_note = 'Moved to unit by landlord'
@@ -342,7 +334,6 @@ class TenantController extends BaseApiController
             throw $e;
         }
 
-        // 6. Notify tenant via In-App and Email
         $this->call->library('notifier');
         $this->notifier->tenant_unit_reassigned(
             $tenant['id'],

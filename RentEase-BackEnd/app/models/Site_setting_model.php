@@ -1,36 +1,23 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * Site_setting_model
- *
- * Key/value store for landlord-specific appearance and tenant welcome content.
- * SCHEMA is the single source of truth: allowed keys, validation, defaults.
- * Unknown keys sent by a client are ignored, so nothing else can be written.
- */
 class Site_setting_model extends Model
 {
     protected $table = 'site_settings';
 
-    /** type: text | color | url | enum | int | decimal | methods */
     public const SCHEMA = [
-        // ---- landlord's sidebar logo ----
         'logo_url'        => ['group' => 'branding',   'type' => 'url',   'max' => 500, 'default' => ''],
-        // ---- colors ----
         'accent_color'    => ['group' => 'colors',     'type' => 'color', 'default' => '#e05a47'],
         'header_color'    => ['group' => 'colors',     'type' => 'color', 'default' => '#1e4620'],
         'hero_color_from' => ['group' => 'colors',     'type' => 'color', 'default' => '#1e4620'],
         'hero_color_to'   => ['group' => 'colors',     'type' => 'color', 'default' => '#4a7450'],
-        // ---- hero ----
         'hero_title'      => ['group' => 'hero',       'type' => 'text',  'max' => 90,  'required' => true, 'default' => 'Welcome home. Your rent, all in one place.'],
         'hero_subtitle'   => ['group' => 'hero',       'type' => 'text',  'max' => 220, 'default' => 'Check what is due, download receipts, and follow repair updates from your tenant account.'],
         'hero_cta_text'   => ['group' => 'hero',       'type' => 'text',  'max' => 30,  'default' => 'Go to my rent'],
         'hero_image_url'  => ['group' => 'hero',       'type' => 'url',   'max' => 500, 'default' => ''],
-        // ---- appearance ----
         'default_theme'   => ['group' => 'appearance', 'type' => 'enum',  'values' => ['light', 'dark', 'system'], 'default' => 'light'],
         'glass_blur'      => ['group' => 'appearance', 'type' => 'int',   'min' => 0,  'max' => 40, 'default' => '8'],
         'glass_opacity'   => ['group' => 'appearance', 'type' => 'int',   'min' => 20, 'max' => 90, 'default' => '90'],
-        // ---- landlord billing defaults; copied onto each lease at creation ----
         'billing_style' => ['group' => 'billing', 'type' => 'enum', 'values' => ['calendar', 'anniversary', 'first_of_month'], 'default' => 'calendar'],
         'billing_due_day' => ['group' => 'billing', 'type' => 'int', 'min' => 1, 'max' => 28, 'default' => '1'],
         'billing_prorate_first_month' => ['group' => 'billing', 'type' => 'enum', 'values' => ['0', '1'], 'default' => '1'],
@@ -39,7 +26,6 @@ class Site_setting_model extends Model
         'payment_methods' => ['group' => 'billing', 'type' => 'methods', 'values' => ['gcash', 'paymaya'], 'default' => 'gcash,paymaya'],
     ];
 
-    /** @return array<string,string> every setting, falling back to defaults for missing rows */
     public function get_all($owner_id = null)
     {
         $out = [];
@@ -74,11 +60,6 @@ class Site_setting_model extends Model
         )->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /**
-     * Validate + normalise client input. Only keys present in SCHEMA are looked at.
-     *
-     * @return array{0: array<string,string>, 1: array<string,string>} [clean, errors]
-     */
     public function validate(array $input)
     {
         $clean  = [];
@@ -148,7 +129,6 @@ class Site_setting_model extends Model
 
                 case 'url':
                     if ($value !== '') {
-                        // either an uploaded image served by this API or an http(s) link
                         $own = (bool) preg_match('#^/api/assets/(logo|hero)\?owner=\d{1,10}&v=\d{1,12}$#', $value);
                         $ok = $own || (filter_var($value, FILTER_VALIDATE_URL)
                            && preg_match('#^https?://#i', $value)
@@ -190,12 +170,6 @@ class Site_setting_model extends Model
         return [$clean, $errors];
     }
 
-    /**
-     * Persist validated values and write one audit row per value that actually changed.
-     *
-     * @param array<string,string> $clean
-     * @return array<int,string> keys that changed
-     */
     public function save(array $clean, $user_id, $owner_id)
     {
         $current = $this->get_all($owner_id);
@@ -227,7 +201,6 @@ class Site_setting_model extends Model
         return $changed;
     }
 
-    /** Restore every setting to its default value. */
     public function reset($user_id, $owner_id)
     {
         $defaults = [];

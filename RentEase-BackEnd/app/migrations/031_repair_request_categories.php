@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Store the selected tenant repair category; priority is derived from that category. */
 class Repair_request_categories
 {
     private $_lava;

@@ -36,7 +36,7 @@ const TenantTransfers = lazy(() => import('./pages/tenant/Transfers'))
 
 export default function App() {
   const { pathname } = useLocation()
-  const bleed = pathname === '/' || pathname === '/login' || pathname === '/register' || pathname === '/onboarding' // full-width pages (hero / split auth / setup)
+  const bleed = pathname === '/' || pathname === '/login' || pathname === '/register' || pathname === '/onboarding' 
   const isDash = pathname.startsWith('/admin') || pathname.startsWith('/tenant')
   const isChatPage = pathname === '/admin/chats' || pathname === '/tenant/chats'
   const isChatWorkspace = isChatPage || pathname === '/admin/assistant'

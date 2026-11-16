@@ -279,7 +279,7 @@ export default function PropertyLocationPicker({ address, city, barangay: savedB
       markerRef.current = null
       if (reverseTimerRef.current) window.clearTimeout(reverseTimerRef.current)
     }
-    // Map is initialized once; later external coordinate changes are handled below.
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -330,7 +330,7 @@ export default function PropertyLocationPicker({ address, city, barangay: savedB
         onChange({ barangay: barangayMatch.name })
       }
     } catch {
-      // Keep the user's existing barangay when the official list is unavailable.
+
     }
   }
 

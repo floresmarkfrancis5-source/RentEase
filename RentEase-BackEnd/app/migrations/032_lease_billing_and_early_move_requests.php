@@ -1,8 +1,5 @@
 <?php
 
-/**
- * Persist billing terms on leases and allow tenants to request an early move-in.
- */
 class Lease_billing_and_early_move_requests
 {
     private $_lava;

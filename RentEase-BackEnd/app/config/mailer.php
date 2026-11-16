@@ -8,5 +8,4 @@ $config['mailer_smtp_pass'] = getenv('SMTP_PASS') ?: '';
 $config['mailer_smtp_secure'] = strtolower(getenv('SMTP_SECURE') ?: 'tls');
 $config['mailer_from'] = getenv('MAIL_FROM') ?: 'no-reply@rentease.local';
 $config['mailer_from_name'] = getenv('MAIL_FROM_NAME') ?: 'RentEase';
-// Brevo HTTPS API (works on Render Free - no SMTP port required)
 $config['brevo_api_key'] = getenv('BREVO_API_KEY') ?: '';

@@ -1,8 +1,5 @@
 <?php
 
-/**
- * RentEase - barangay location and tenant unit transfer requests.
- */
 class Add_property_barangay_and_unit_transfer_requests {
 
     private $_lava;

@@ -447,7 +447,7 @@ export function LanguageProvider({ children }) {
     try {
       localStorage.setItem(STORAGE_KEY, value)
     } catch {
-      // The selected language still applies for this session if storage is unavailable.
+
     }
   }, [])
 

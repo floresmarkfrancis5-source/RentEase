@@ -1,8 +1,5 @@
 <?php
 
-/**
- * RentEase - in-app notifications for landlords and tenants.
- */
 class Create_in_app_notifications {
 
     private $_lava;

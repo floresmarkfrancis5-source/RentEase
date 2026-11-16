@@ -30,7 +30,6 @@ function daysOpen(createdAt) {
   return Math.max(0, Math.floor((today - created) / 86400000))
 }
 
-
 function UpdateRepairModal({ item, onClose, onSave }) {
   const [status, setStatus] = useState(item.status || 'pending')
   const [adminNotes, setAdminNotes] = useState(item.admin_notes || '')

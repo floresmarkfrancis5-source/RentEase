@@ -1,9 +1,5 @@
 <?php
 
-/**
- * RentEase - add image_url to maintenance_images
- * Stores direct Cloudinary CDN URLs and allows data BLOB to be nullable.
- */
 class Add_image_url_to_maintenance_images {
 
     private $_lava;

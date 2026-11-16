@@ -33,36 +33,18 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
  * @link https://github.com/ronmarasigan/LavaLust
  * @license https://opensource.org/licenses/MIT MIT License
  */
-/*
-|--------------------------------------------------------------------------
-| Adding of middlewares
-|--------------------------------------------------------------------------
-|
-| Used for adding middlewares
-|
-*/
-/*
-| Every middleware class lives in app/middlewares/ and exposes handle($next).
-| The array KEY is the name used in routes.php:
-|     $router->add_global_middleware(['security_headers', 'throttle', 'json_only']);
-|     $router->get('api/x', 'X::y')->middleware('auth');
-|     $router->group(['middleware' => ['auth', 'admin']], function ($router) { ... });
-*/
 $config['middlewares'] = [
-    // --- global (applied to every route) ---
-    'security_headers' => new SecurityHeadersMiddleware(),   // nosniff, frame-deny, CSP, HSTS, no-store
-    'throttle'         => new ThrottleMiddleware(120, 60, 'global'),   // 120 requests / minute / IP
-    'json_only'        => new JsonOnlyMiddleware(),          // bodies must be application/json (415)
+    'security_headers' => new SecurityHeadersMiddleware(),
+    'throttle'         => new ThrottleMiddleware(120, 60, 'global'),
+    'json_only'        => new JsonOnlyMiddleware(),
 
-    // --- authentication & authorisation ---
-    'throttle_auth'    => new ThrottleMiddleware(10, 60, 'auth'),      // 10 login attempts / minute / IP
-    'auth'             => new AuthMiddleware(),              // valid JWT + active account (401)
-    'admin'            => new RoleMiddleware('admin'),       // landlord only (403)
-    'tenant'           => new RoleMiddleware('tenant'),      // tenant only (403)
-    'superadmin'       => new RoleMiddleware('superadmin'),  // platform account administration (403)
+    'throttle_auth'    => new ThrottleMiddleware(10, 60, 'auth'),
+    'auth'             => new AuthMiddleware(),
+    'admin'            => new RoleMiddleware('admin'),
+    'tenant'           => new RoleMiddleware('tenant'),
+    'superadmin'       => new RoleMiddleware('superadmin'),
 
-    // --- special endpoints ---
-    'paymongo_webhook' => new PaymongoWebhookMiddleware(),   // HMAC signature check
-    'cron'             => new CronMiddleware(),              // X-Cron-Token header
-    'dev_only'         => new DevOnlyMiddleware(),           // migration URLs: local only
+    'paymongo_webhook' => new PaymongoWebhookMiddleware(),
+    'cron'             => new CronMiddleware(),
+    'dev_only'         => new DevOnlyMiddleware(),
 ];

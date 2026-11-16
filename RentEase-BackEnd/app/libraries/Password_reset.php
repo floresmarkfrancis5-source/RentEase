@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Sends short-lived password reset links without exposing a token to logs. */
 class Password_reset
 {
     private $_lava;

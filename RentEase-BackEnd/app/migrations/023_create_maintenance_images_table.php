@@ -1,11 +1,5 @@
 <?php
 
-/**
- * RentEase - maintenance_images table
- * Stores photos and images attached to maintenance repair requests.
- * Uses MEDIUMBLOB so images are securely stored in MySQL and preserved across server restarts.
- * Supports multiple images per repair request.
- */
 class Create_maintenance_images_table {
 
     private $_lava;
@@ -33,7 +27,6 @@ CREATE TABLE IF NOT EXISTS maintenance_images (
 SQL;
         $this->_lava->db->raw($sql);
 
-        // Expand notifications_log type enum to include new_maintenance_request
         try {
             $this->_lava->db->raw("ALTER TABLE notifications_log MODIFY COLUMN type ENUM('welcome','due_reminder','payment_confirmation','maintenance_update','new_maintenance_request','other') NOT NULL DEFAULT 'other'");
         } catch (Throwable $e) {}

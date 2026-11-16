@@ -1,4 +1,4 @@
-// Small color helpers so any admin-chosen color stays readable.
+
 
 export function hexToRgb(hex) {
   let h = String(hex || '').replace('#', '')
@@ -21,7 +21,6 @@ function contrast(l1, l2) {
   return (a + 0.05) / (b + 0.05)
 }
 
-/** Dark or white text, whichever has more contrast on this background. */
 export function readableOn(...hexes) {
   const rgbs = hexes.map(hexToRgb)
   const avg = rgbs[0].map((_, i) => rgbs.reduce((s, c) => s + c[i], 0) / rgbs.length)

@@ -1,9 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * Cloudinary Library - Uploads and hosts images on Cloudinary CDN for instant loading worldwide.
- */
 class Cloudinary
 {
     private $_lava;
@@ -28,12 +25,6 @@ class Cloudinary
         return !empty($this->cloud_name) && (!empty($this->upload_preset) || (!empty($this->api_key) && !empty($this->api_secret)));
     }
 
-    /**
-     * Upload an image (base64 data URL or file path) to Cloudinary.
-     * @param string $file_or_data_url
-     * @param string $folder
-     * @return array [ 'url' => string|null, 'public_id' => string|null, 'error' => string|null ]
-     */
     public function upload($file_or_data_url, $folder = 'rentease/maintenance')
     {
         if (!$this->configured()) {
@@ -46,7 +37,6 @@ class Cloudinary
             'folder' => $folder,
         ];
 
-        // If an unsigned upload preset is provided, use it directly (no signature needed)
         if (!empty($this->upload_preset)) {
             $post_fields['upload_preset'] = $this->upload_preset;
         } else {
@@ -57,7 +47,6 @@ class Cloudinary
             ];
             ksort($params);
 
-            // Construct string to sign: key1=value1&key2=value2
             $sign_pairs = [];
             foreach ($params as $k => $v) {
                 $sign_pairs[] = "{$k}={$v}";

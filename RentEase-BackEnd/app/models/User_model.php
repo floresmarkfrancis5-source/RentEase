@@ -1,9 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * User_model - accounts (table: users). Roles: superadmin, admin (landlord), and tenant.
- */
 class User_model extends Model
 {
     protected $table = 'users';
@@ -114,7 +111,6 @@ class User_model extends Model
         )->fetch(PDO::FETCH_ASSOC);
     }
 
-    /** Is this username / email already used by someone else?  ($field is whitelisted) */
     public function field_taken($field, $value, $exclude_id = 0)
     {
         if (!in_array($field, ['username', 'email'], true)) {
@@ -128,7 +124,6 @@ class User_model extends Model
             ->get();
     }
 
-    /** Build a unique username from the e-mail address ("juan@x.com" -> "juan", "juan2", ...). */
     public function unique_username($email)
     {
         $base = preg_replace('/[^a-z0-9_.-]/', '', strtolower(strstr($email, '@', true)));
@@ -214,7 +209,6 @@ class User_model extends Model
         return $this->db->table($this->table)->where('id', (int) $id)->update($allowed);
     }
 
-    /** Tenants with their current (active) unit, for the landlord's tenant list. */
     public function tenants($landlord_id = null)
     {
         $sql = "SELECT u.id, u.username, u.email, u.full_name, u.phone, u.is_active, u.must_change_password, u.created_at,
@@ -314,23 +308,17 @@ class User_model extends Model
         return implode(',', array_fill(0, count($items), '?'));
     }
 
-    /**
-     * Permanently delete a landlord account and purge all associated properties,
-     * units, leases, bills, payments, maintenance, and tenant accounts in an atomic transaction.
-     */
     public function delete_landlord($id)
     {
         $landlord_id = (int) $id;
         $this->db->transaction();
         try {
-            // 1. Properties owned by landlord
             $prop_rows = $this->db->table('properties')
                 ->select('id')
                 ->where('owner_id', $landlord_id)
                 ->get_all(PDO::FETCH_ASSOC) ?: [];
             $property_ids = array_map('intval', array_column($prop_rows, 'id'));
 
-            // 2. Units in those properties
             $unit_ids = [];
             if (!empty($property_ids)) {
                 $p = $this->_in_placeholders($property_ids);
@@ -338,7 +326,6 @@ class User_model extends Model
                 $unit_ids = array_map('intval', array_column($unit_rows, 'id'));
             }
 
-            // 3. Tenants assigned to this landlord
             $tenant_rows = $this->db->table('users')
                 ->select('id')
                 ->where('landlord_id', $landlord_id)
@@ -346,7 +333,6 @@ class User_model extends Model
                 ->get_all(PDO::FETCH_ASSOC) ?: [];
             $tenant_ids = array_map('intval', array_column($tenant_rows, 'id'));
 
-            // 4. Leases
             $lease_ids = [];
             if (!empty($unit_ids) || !empty($tenant_ids)) {
                 $conds = [];
@@ -363,14 +349,12 @@ class User_model extends Model
                 $lease_ids = array_map('intval', array_column($lease_rows, 'id'));
             }
 
-            // 5. Lease documents & Lease events
             if (!empty($lease_ids)) {
                 $p = $this->_in_placeholders($lease_ids);
                 $this->db->raw("DELETE FROM lease_documents WHERE lease_id IN ($p)", $lease_ids);
                 $this->db->raw("DELETE FROM lease_events WHERE lease_id IN ($p)", $lease_ids);
             }
 
-            // 6. Bills & Payments
             $bill_ids = [];
             if (!empty($lease_ids) || !empty($tenant_ids)) {
                 $conds = [];
@@ -387,7 +371,6 @@ class User_model extends Model
                 $bill_ids = array_map('intval', array_column($bill_rows, 'id'));
             }
 
-            // Delete payments
             $pay_conds = ['recorded_by = ?'];
             $pay_args  = [$landlord_id];
             if (!empty($bill_ids)) {
@@ -400,13 +383,11 @@ class User_model extends Model
             }
             $this->db->raw("DELETE FROM payments WHERE " . implode(' OR ', $pay_conds), $pay_args);
 
-            // Delete bills
             if (!empty($bill_ids)) {
                 $p = $this->_in_placeholders($bill_ids);
                 $this->db->raw("DELETE FROM bills WHERE id IN ($p)", $bill_ids);
             }
 
-            // 7. Maintenance requests & images
             $maint_ids = [];
             if (!empty($unit_ids) || !empty($tenant_ids)) {
                 $conds = [];
@@ -429,7 +410,6 @@ class User_model extends Model
                 $this->db->raw("DELETE FROM maintenance_requests WHERE id IN ($p)", $maint_ids);
             }
 
-            // 8. Unit transfer requests
             $transfer_conds = ['decided_by = ?'];
             $transfer_args  = [$landlord_id];
             if (!empty($unit_ids)) {
@@ -444,25 +424,21 @@ class User_model extends Model
             }
             $this->db->raw("DELETE FROM unit_transfer_requests WHERE " . implode(' OR ', $transfer_conds), $transfer_args);
 
-            // 9. Leases
             if (!empty($lease_ids)) {
                 $p = $this->_in_placeholders($lease_ids);
                 $this->db->raw("DELETE FROM leases WHERE id IN ($p)", $lease_ids);
             }
 
-            // 10. Units
             if (!empty($unit_ids)) {
                 $p = $this->_in_placeholders($unit_ids);
                 $this->db->raw("DELETE FROM units WHERE id IN ($p)", $unit_ids);
             }
 
-            // 11. Properties
             if (!empty($property_ids)) {
                 $p = $this->_in_placeholders($property_ids);
                 $this->db->raw("DELETE FROM properties WHERE id IN ($p)", $property_ids);
             }
 
-            // 12. Tenant users and their personal records
             if (!empty($tenant_ids)) {
                 $p = $this->_in_placeholders($tenant_ids);
                 $this->db->raw("DELETE FROM tenant_invitations WHERE user_id IN ($p)", $tenant_ids);
@@ -474,14 +450,12 @@ class User_model extends Model
                 $this->db->raw("DELETE FROM users WHERE id IN ($p)", $tenant_ids);
             }
 
-            // 13. Landlord artifacts
             $this->db->table('user_avatars')->where('user_id', $landlord_id)->delete();
             $this->db->table('refresh_tokens')->where('user_id', $landlord_id)->delete();
             $this->db->table('password_resets')->where('user_id', $landlord_id)->delete();
             $this->db->table('in_app_notifications')->where('user_id', $landlord_id)->delete();
             $this->db->table('notifications_log')->where('user_id', $landlord_id)->delete();
 
-            // Assistant conversations & messages
             $conv_rows = $this->db->table('assistant_conversations')
                 ->select('id')
                 ->where('user_id', $landlord_id)
@@ -493,7 +467,6 @@ class User_model extends Model
                 $this->db->raw("DELETE FROM assistant_conversations WHERE id IN ($p)", $conv_ids);
             }
 
-            // 14. Finally, delete the landlord user record
             $this->db->table($this->table)->where('id', $landlord_id)->where('role', 'admin')->delete();
 
             $this->db->commit();

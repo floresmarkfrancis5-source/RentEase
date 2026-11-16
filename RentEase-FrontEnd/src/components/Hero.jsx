@@ -13,10 +13,6 @@ const FEATS = [
   ['AI rental', 'assistant', 'M8 8h32a4 4 0 0 1 4 4v17a4 4 0 0 1-4 4H20l-10 7v-7H8a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4Zm8 12h.01M24 20h.01M32 20h.01M19 27h10'],
 ]
 
-/**
- * Full-bleed homepage hero. Takes settings as props so the admin page can preview a draft
- * (compact = smaller, no scroll effects; inert = links are not focusable).
- */
 export default function Hero({ s, compact = false, inert = false, play = true, tenant = false, defaultImage = false, marketing = false }) {
   const { t } = useLanguage()
   const root = useRef(null)
@@ -30,8 +26,7 @@ export default function Hero({ s, compact = false, inert = false, play = true, t
 
   useDust(dust, root, !compact)
 
-  // parallax: the photo moves slower than the text, the text fades as you scroll away
-  useEffect(() => {
+useEffect(() => {
     if (compact || reducedMotion()) return undefined
     let tick = false
     const on = () => {

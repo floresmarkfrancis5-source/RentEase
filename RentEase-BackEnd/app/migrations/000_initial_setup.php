@@ -42,8 +42,5 @@ class Initial_setup {
     public function down()
     {
         // Intentionally left as a no-op.
-        // Dropping the migrations table would destroy all migration history
-        // and break every subsequent rollback. Only drop manually if you
-        // are wiping the entire database.
     }
 }

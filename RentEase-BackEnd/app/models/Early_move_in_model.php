@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Tenant requests to move in before the scheduled start date of an accepted lease. */
 class Early_move_in_model extends Model
 {
     protected $table = 'early_move_in_requests';

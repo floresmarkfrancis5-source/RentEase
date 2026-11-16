@@ -1,10 +1,5 @@
 <?php
 
-/**
- * RentEase - site_settings table
- * Raw SQL is used here so foreign keys, a generated column and ENUMs are created exactly as designed.
- * Table order matters: parents are created before the tables that reference them.
- */
 class Create_site_settings_table {
 
     private $_lava;
@@ -32,7 +27,6 @@ CREATE TABLE IF NOT EXISTS site_settings (
 SQL;
         $this->_lava->db->raw($sql);
 
-        // Default values come from the model so the schema and the defaults never drift apart.
         $this->_lava->call->model('Site_setting_model');
         foreach (Site_setting_model::SCHEMA as $key => $def) {
             $this->_lava->db->raw(

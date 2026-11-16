@@ -2,7 +2,6 @@ import { createElement, useEffect, useRef } from 'react'
 
 export const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-/** Fades an element in when it scrolls into view. <Reveal as="h2" delay=".1s">…</Reveal> */
 export function Reveal({ as = 'div', delay, className = '', children, ...rest }) {
   const ref = useRef(null)
   useEffect(() => {
@@ -18,7 +17,6 @@ export function Reveal({ as = 'div', delay, className = '', children, ...rest })
   return createElement(as, { ref, 'data-reveal': '', className, style: delay ? { '--rd': delay } : undefined, ...rest }, children)
 }
 
-/** Slow floating glow particles on the hero canvas. */
 export function useDust(canvasRef, heroRef, enabled = true) {
   useEffect(() => {
     const c = canvasRef.current
@@ -68,7 +66,6 @@ export function useDust(canvasRef, heroRef, enabled = true) {
   }, [canvasRef, heroRef, enabled])
 }
 
-/** Scroll progress bar + the soft circle that follows the mouse (desktop only). */
 export function PageMotion() {
   const bar = useRef(null)
   const cur = useRef(null)

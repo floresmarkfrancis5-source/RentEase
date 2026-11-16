@@ -5,7 +5,6 @@ import Glass from './Glass'
 import HelpTip from './HelpTip'
 import { helpFor, useLanguage } from '../context/LanguageContext'
 
-/** Load an authenticated GET endpoint. Returns { data, error, loading, reload }. */
 export function useLoad(path) {
   const [state, set] = useState({ data: null, error: '', loading: true })
   const reload = useCallback(() => {
@@ -65,7 +64,6 @@ export function State({ loading, error, empty, children }) {
   return children
 }
 
-/** columns: [{ key, label, render?(row), align? }] */
 export function Table({ columns, rows, actions }) {
   const { t } = useLanguage()
   return (
@@ -128,7 +126,6 @@ export function Field({ label, error, hint, checkbox = false, children }) {
   )
 }
 
-/** Small form modal: fields declared as [{ name, label, type, options, ... }]. onSubmit(values) must throw ApiError to show errors. */
 export function FormModal({ title, fields, initial = {}, submitLabel = 'Save', onSubmit, onClose }) {
   const { t } = useLanguage()
   const [v, setV] = useState(() => Object.fromEntries(fields.map((f) => [f.name, initial[f.name] ?? f.default ?? ''])))
@@ -177,7 +174,6 @@ export function FormModal({ title, fields, initial = {}, submitLabel = 'Save', o
   )
 }
 
-/** Toasts: const [toast, flash] = useToast();  flash('Saved') ... {toast} */
 export function useToast() {
   const [msg, setMsg] = useState(null)
   useEffect(() => {
