@@ -1,18 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * AuthController - token based (JWT) authentication
- *
- *   POST /api/auth/login            email-or-username + password -> user + access/refresh tokens
- *   POST /api/auth/google           Google ID token -> same response (account must already exist)
- *   POST /api/auth/refresh          refresh_token -> new tokens (old one is revoked)
- *   POST /api/auth/logout           revoke the refresh token          [auth]
- *   GET  /api/auth/me               current user                      [auth]
- *   POST /api/auth/change-password  current + new password           [auth]
- *
- * login/google/refresh are protected by the strict 'throttle_auth' middleware (10 tries / minute / IP).
- */
 class AuthController extends BaseApiController
 {
     public function __construct()
@@ -50,7 +38,7 @@ class AuthController extends BaseApiController
     {
         $this->api->require_method('POST');
         $in       = $this->input();
-        $login    = trim((string) ($in['login'] ?? $in['email'] ?? $in['username'] ?? ''));   // email OR username
+        $login    = trim((string) ($in['login'] ?? $in['email'] ?? $in['username'] ?? ''));
         $password = (string) ($in['password'] ?? '');
 
         if ($login === '' || $password === '') {
@@ -59,7 +47,6 @@ class AuthController extends BaseApiController
 
         $user = $this->User_model->find_by_login($login);
 
-        // Same message for "no such user", "wrong password" and "disabled" so accounts cannot be probed.
         if (!$user || !password_verify($password, $user['password']) || (int) $user['is_active'] !== 1
             || !$this->User_model->tenant_landlord_active($user)) {
             $this->fail('Invalid email/username or password.', 401);
@@ -158,7 +145,6 @@ class AuthController extends BaseApiController
         if (!$user) {
             $user = $this->User_model->find_by_email($profile['email']);
             if ($user) {
-                // First Google login for an account the landlord created: link it.
                 $this->User_model->update_user($user['id'], ['google_id' => $profile['sub']]);
             }
         }
@@ -176,7 +162,7 @@ class AuthController extends BaseApiController
         if ($token === '') {
             $this->fail('refresh_token is required.', 422);
         }
-        $this->api->refresh_access_token($token);   // responds with new tokens (or an error) and exits
+        $this->api->refresh_access_token($token);
     }
 
     public function logout()
@@ -217,7 +203,6 @@ class AuthController extends BaseApiController
         }
 
         $this->User_model->update_user($user['id'], ['password' => password_hash($new, PASSWORD_DEFAULT), 'must_change_password' => 0]);
-        // Sign every other device out.
         $this->User_model->delete_refresh_tokens($user['id']);
         $this->ok(['message' => 'Password changed. Please log in again on your other devices.']);
     }
@@ -311,7 +296,6 @@ class AuthController extends BaseApiController
             $this->fail('This invitation link is invalid or has expired.', 409);
         }
 
-        // Verify that the Google email matches the tenant email address
         if (strtolower($profile['email']) !== strtolower($record['email'])) {
             $this->fail('Please sign in with the Google Account assigned to this invitation (' . $record['email'] . ').', 403);
         }

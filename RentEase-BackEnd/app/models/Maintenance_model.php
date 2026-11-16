@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Maintenance_model - repair requests from tenants (table: maintenance_requests). */
 class Maintenance_model extends Model
 {
     protected $table = 'maintenance_requests';

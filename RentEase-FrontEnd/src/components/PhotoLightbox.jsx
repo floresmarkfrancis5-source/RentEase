@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 
-// Shared in-memory blob cache so images don't re-fetch repeatedly
 const blobCache = new Map()
 
 export async function fetchImageBlobUrl(imageId) {
@@ -211,10 +210,6 @@ export function PhotoLightbox({ image, onClose }) {
   )
 }
 
-/**
- * Enhanced photo thumbnails component for repair tables and details.
- * Directly renders thumbnail previews with instant lightbox popup on click.
- */
 export function RepairPhotoThumbnails({ images, onSelectImage, maxPreview = 3 }) {
   if (!images || images.length === 0) {
     return <span className="muted" style={{ fontSize: '.84rem' }}>—</span>
@@ -286,18 +281,10 @@ export function RepairFeaturedPhoto({ images, onSelectImage }) {
   )
 }
 
-/**
- * Backward-compatible alias that directly renders the thumbnails.
- */
 export function RepairPhotoBadge(props) {
   return <RepairPhotoThumbnails {...props} />
 }
 
-/**
- * Compresses an image file using HTML5 Canvas to max dimension 1280px and JPEG quality 0.80.
- * Drastically shrinks 2MB-8MB camera photos down to ~90-180 KB (over 95% reduction in size),
- * keeping transfers to Aiven Cloud lightning fast on home Wi-Fi.
- */
 export function compressImageFile(file, { maxWidth = 1280, maxHeight = 1280, quality = 0.80 } = {}) {
   return new Promise((resolve, reject) => {
     if (!file || !file.type?.startsWith('image/')) {

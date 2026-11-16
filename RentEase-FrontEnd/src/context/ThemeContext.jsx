@@ -51,7 +51,7 @@ export function ThemeProvider({ children }) {
     setChoice(next)
     try {
       localStorage.setItem(`rentease-theme-${accountKey}`, JSON.stringify({ theme: next, defaultTheme: saved.default_theme }))
-    } catch { /* The selected mode still applies for this session if storage is unavailable. */ }
+    } catch {  }
   }, [accountKey, saved.default_theme, theme])
 
   const value = useMemo(() => ({ theme, toggle }), [theme, toggle])

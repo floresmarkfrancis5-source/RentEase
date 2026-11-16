@@ -1,10 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * Maintenance_image_model - attached photos/screenshots for repair requests (table: maintenance_images).
- * Binary data stored in MEDIUMBLOB; metadata cached in list queries.
- */
 class Maintenance_image_model extends Model
 {
     protected $table = 'maintenance_images';
@@ -16,11 +12,6 @@ class Maintenance_image_model extends Model
         'image/gif'  => 'gif',
     ];
 
-    /**
-     * Decode a base64 data URL into binary bytes, mime, and error string if any.
-     * @param string|null $data_url
-     * @return array [binary|null, mime|null, error|null]
-     */
     public function decode_image($data_url)
     {
         if (!is_string($data_url) || !preg_match('#^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$#', $data_url, $m)) {
@@ -34,7 +25,6 @@ class Maintenance_image_model extends Model
         if (strlen($binary) > self::MAX_BYTES) {
             return [null, null, 'Image size exceeds the 10 MB limit.'];
         }
-        // Verify image bytes
         $info = @getimagesizefromstring($binary);
         if (!$info || !isset(self::ALLOWED_MIMES[$info['mime']])) {
             return [null, null, 'The file content is not a valid image format.'];
@@ -50,7 +40,6 @@ class Maintenance_image_model extends Model
             $safe_name = ($uploader_role === 'landlord' ? 'resolution_photo_' : 'repair_photo_') . time() . '.' . $ext;
         }
 
-        // Try uploading to Cloudinary CDN
         $image_url = null;
         try {
             $cloudinary = $this->call->library('cloudinary');
@@ -65,7 +54,6 @@ class Maintenance_image_model extends Model
                 }
             }
         } catch (Throwable $e) {
-            // Cloudinary upload failed; fallback to local BLOB storage
         }
 
         $this->db->table($this->table)->insert([
@@ -92,11 +80,6 @@ class Maintenance_image_model extends Model
             ->get_all(PDO::FETCH_ASSOC);
     }
 
-    /**
-     * Batch fetch images for multiple maintenance requests, keyed by request_id.
-     * @param int[] $request_ids
-     * @return array<int, array>
-     */
     public function list_for_requests(array $request_ids)
     {
         $ids = array_filter(array_map('intval', $request_ids));

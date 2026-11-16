@@ -1,4 +1,3 @@
-/** Crisp vector mockup of a classic property-management desktop application. */
 export default function HeroArt() {
   return (
     <svg className="hero-art" viewBox="0 0 1200 720" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">

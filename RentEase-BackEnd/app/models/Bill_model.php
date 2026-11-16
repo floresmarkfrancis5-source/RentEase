@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Bill_model - monthly rent bills (table: bills). Statuses: unpaid, paid, overdue. */
 class Bill_model extends Model
 {
     protected $table = 'bills';
@@ -14,7 +13,6 @@ class Bill_model extends Model
                JOIN properties p ON p.id = u.property_id
                JOIN users t      ON t.id = b.tenant_id";
 
-    /** Unpaid bills whose due date has passed become "overdue" (called before every read). */
     public function mark_overdue()
     {
         return $this->db->raw(
@@ -52,11 +50,6 @@ class Bill_model extends Model
         return $this->db->raw($sql, $args)->fetch(PDO::FETCH_ASSOC);
     }
 
-    /**
-     * Create one bill per active lease for $month (YYYY-MM). Running it twice never duplicates:
-     * the UNIQUE(lease_id, period_month) key makes the second INSERT IGNORE a no-op.
-     * @return array{created:int, skipped:int, leases:int}
-     */
     public function generate_month($month, &$created_bills = null, $landlord_id = null)
     {
         $first = $month . '-01';
@@ -134,10 +127,6 @@ class Bill_model extends Model
             ->get();
     }
 
-    /**
-     * Adjust amount and/or notes on a bill that has NOT been paid yet.
-     * Returns false when nothing to update or the bill is already paid.
-     */
     public function update_bill($id, array $d, $landlord_id = null)
     {
         $allowed = [];
@@ -149,7 +138,6 @@ class Bill_model extends Model
         }
         if (!$allowed) return false;
 
-        // Verify the bill exists and belongs to the landlord (via property ownership), and is not paid.
         $check_sql = 'SELECT b.id FROM bills b JOIN leases l ON l.id = b.lease_id JOIN units u ON u.id = l.unit_id JOIN properties p ON p.id = u.property_id WHERE b.id = ? AND b.status <> \'paid\'';
         $args = [(int) $id];
         if ($landlord_id !== null) { $check_sql .= ' AND p.owner_id = ?'; $args[] = (int) $landlord_id; }
@@ -165,7 +153,6 @@ class Bill_model extends Model
         return $this->db->table($this->table)->where('id', (int) $id)->delete();
     }
 
-    /** Bills that need a reminder: unpaid/overdue and due within $days days (or already late). */
     public function due_soon($days = 3)
     {
         $this->mark_overdue();

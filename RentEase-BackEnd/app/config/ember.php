@@ -34,58 +34,14 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
  * @license https://opensource.org/licenses/MIT MIT License
  */
 
-/*
-|--------------------------------------------------------------------------
-| Enable/Disable Ember Helper
-|--------------------------------------------------------------------------
-|
-| Used for Enabling or Disabling Ember Helper
-|
-*/
 $config['ember_helper_enabled'] = FALSE;
 
-/*
-|--------------------------------------------------------------------------
-| Cache Path
-|--------------------------------------------------------------------------
-|
-| Used for Storing Cached Templates
-|
-*/
 $config['cache_path'] = ROOT_DIR . 'runtime/cache/';
 
-/*
-|--------------------------------------------------------------------------
-| Views Path
-|--------------------------------------------------------------------------
-|
-| Used for Storing View Templates
-|
-*/
 $config['templates_path'] = APP_DIR . 'views/';
 
-/*
-|-------------------------------------------------------------------------- 
-| Auto Escape
-|--------------------------------------------------------------------------     
-| Used for Enabling or Disabling Auto Escape Output
-|
-*/
 $config['auto_escape'] = TRUE;
 
-/*
-|--------------------------------------------------------------------------
-| Escape Context
-|--------------------------------------------------------------------------
-| Used for Specifying the Default Context for Auto Escaping (e.g., 'html', 'js', 'attr')
-|
-*/
 $config['escape_context']     = 'html';
 
-/*|--------------------------------------------------------------------------
-| Enable PHP in Templates
-|--------------------------------------------------------------------------
-| Used for Allowing or Disallowing Raw PHP Code in Templates (strongly recommended to keep false for security)
-|
-*/
 $config['enable_php_blocks']  = FALSE;

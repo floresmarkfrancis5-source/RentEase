@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Audit Assistant-initiated writes without storing secrets or credentials. */
 class Create_assistant_audit_logs
 {
     private $_lava;

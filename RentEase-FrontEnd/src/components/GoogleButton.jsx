@@ -3,19 +3,6 @@ import { useLanguage } from '../context/LanguageContext'
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
-/**
- * GoogleButton
- * ─────────────────────────────────────────────────────────────────
- * Renders the official Google-branded Sign-in button when
- * VITE_GOOGLE_CLIENT_ID is configured in the front-end .env.
- *
- * Props
- *   label        – visible text when Google is NOT configured (placeholder)
- *   onCredential – callback(credentialToken: string) called after Google
- *                  issues a JWT id_token. The parent decides whether to
- *                  call loginGoogle() or registerGoogle().
- *   theme        – 'outline' | 'filled_blue' | 'filled_black' (default: 'outline')
- */
 export default function GoogleButton({ label = 'Continue with Google', onCredential, theme = 'outline' }) {
   const { t } = useLanguage()
   const containerRef = useRef(null)
@@ -25,8 +12,7 @@ export default function GoogleButton({ label = 'Continue with Google', onCredent
 
   const configured = CLIENT_ID !== ''
 
-  // Initialise GSI once the library has loaded
-  useEffect(() => {
+useEffect(() => {
     if (!configured) return
     let attempts = 0
     const MAX = 40 // ~4 seconds
@@ -49,8 +35,7 @@ export default function GoogleButton({ label = 'Continue with Google', onCredent
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configured])
 
-  // Render the native Google button once the container + GSI are both ready
-  useEffect(() => {
+useEffect(() => {
     if (!ready || !containerRef.current || !window.google?.accounts?.id) return
     containerRef.current.innerHTML = ''
     window.google.accounts.id.renderButton(containerRef.current, {
@@ -78,12 +63,11 @@ export default function GoogleButton({ label = 'Continue with Google', onCredent
     }
   }
 
-  // Fallback: open popup when the rendered button isn't clickable (edge cases)
-  function triggerPopup() {
+function triggerPopup() {
     if (!window.google?.accounts?.id) return
     window.google.accounts.id.prompt((notification) => {
       if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        // One Tap was suppressed; nothing extra to do
+
       }
     })
   }
@@ -106,7 +90,7 @@ export default function GoogleButton({ label = 'Continue with Google', onCredent
 
   return (
     <div className="google-btn">
-      {/* Native GSI button rendered here */}
+      {}
       <div
         ref={containerRef}
         className="google-btn__native"

@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** PropertyController (admin) - CRUD for apartments / boarding houses incl. map coordinates. */
 class PropertyController extends BaseApiController
 {
     public function __construct()

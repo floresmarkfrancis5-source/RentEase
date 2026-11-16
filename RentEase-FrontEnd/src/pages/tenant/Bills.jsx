@@ -29,8 +29,7 @@ export default function Bills() {
     return () => { alive = false }
   }, [])
 
-  // Returning from PayMongo: ask the API to confirm the payment (covers a late webhook).
-  useEffect(() => {
+useEffect(() => {
     const id = params.get('payment')
     const result = params.get('result')
     if (!id || handled.current) return

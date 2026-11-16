@@ -1,9 +1,5 @@
 <?php
 
-/**
- * Migration 028: isolate appearance settings and uploaded assets by landlord.
- * Existing global rows are retained but are no longer used for landlord settings.
- */
 class Scope_site_settings_per_landlord
 {
     private $_lava;

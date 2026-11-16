@@ -1,16 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * ProfileController - the logged-in person (landlord OR tenant) edits their own profile.
- *   GET    /api/profile          read my profile
- *   PUT    /api/profile          update full name, username, e-mail, phone
- *   GET    /api/profile/photo    my profile picture (private - needs the login token)
- *   PUT    /api/profile/photo    { image: "data:image/webp;base64,..." }
- *   DELETE /api/profile/photo    remove my picture
- * Everything is scoped to the token's user id, so nobody can touch another account.
- * Role, active flag and password are NOT editable here (password has its own endpoint).
- */
 class ProfileController extends BaseApiController
 {
     public function __construct()
@@ -72,7 +62,6 @@ class ProfileController extends BaseApiController
             $errors['email'] = 'That email is already used by another account.';
         }
 
-        // Changing how you log in (username / e-mail) needs the current password.
         $login_changed = $data['username'] !== $user['username'] || $data['email'] !== strtolower($user['email']);
         if (!$errors && $login_changed && !password_verify((string) ($in['current_password'] ?? ''), $user['password'])) {
             $errors['current_password'] = 'Enter your current password to change your username or email.';

@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Unit_transfer_model - tenant requests to move to another unit. */
 class Unit_transfer_model extends Model
 {
     protected $table = 'unit_transfer_requests';

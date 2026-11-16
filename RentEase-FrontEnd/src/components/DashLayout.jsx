@@ -8,7 +8,6 @@ import Footer from './Footer'
 import FloatingAssistant from './FloatingAssistant'
 import { useLanguage } from '../context/LanguageContext'
 
-// ─── Icons for each nav item ──────────────────────────────────────────────────
 const ICONS = {
   Dashboard: <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>,
   Properties: <svg viewBox="0 0 24 24"><rect x="2" y="7" width="9" height="14" /><rect x="13" y="3" width="9" height="18" /></svg>,
@@ -77,8 +76,7 @@ export default function DashLayout({ role }) {
   const isAssistantPage = loc.pathname === '/admin/assistant'
   const isChatWorkspace = isChatPage || isAssistantPage
 
-  // Close mobile sidebar on navigation
-  useEffect(() => {
+useEffect(() => {
     setMobileOpen(false)
   }, [loc.pathname])
 
@@ -151,13 +149,13 @@ export default function DashLayout({ role }) {
   return (
     <div className={`dash2${isChatWorkspace ? ' dash2--chat' : ''} ${collapsed ? 'dash2--collapsed' : ''} ${mobileOpen ? 'dash2--mobile-open' : ''}`}>
 
-        {/* ── Mobile overlay ── */}
+        {}
         {mobileOpen && <div className="dash2__overlay" onClick={() => setMobileOpen(false)} aria-hidden />}
 
-        {/* ── Sidebar ── */}
+        {}
         <aside className="sidenav2" aria-label={t(isAdmin ? 'Landlord menu' : 'Tenant menu')}>
 
-          {/* Portal identity and sidebar controls */}
+          {}
           <div className="sidenav2__head">
             <div className="sidenav2__brand" aria-label="RentEase">
               <span className="sidenav2__brand-mark"><BrandMark /></span>
@@ -185,7 +183,7 @@ export default function DashLayout({ role }) {
             </button>
           </div>
 
-          {/* User card */}
+          {}
           <div className="sidenav2__user" title={collapsed ? `${user?.full_name || user?.username} (${isAdmin ? 'Landlord' : 'Tenant'})` : undefined}>
             <Avatar user={user} />
             <div className="sidenav2__user-info">
@@ -193,7 +191,7 @@ export default function DashLayout({ role }) {
             </div>
           </div>
 
-          {/* Nav links */}
+          {}
           <nav className="sidenav2__nav">
             {links.map(([to, label, end]) => {
               const section = isAdmin ? ADMIN_SECTIONS.find(([path]) => path === to)?.[1] : null
@@ -225,7 +223,7 @@ export default function DashLayout({ role }) {
           <div className="sidenav2__spacer" />
         </aside>
 
-        {/* ── Mobile hamburger ── */}
+        {}
         <button
           type="button"
           className={`dash2__hamburger${isChatWorkspace ? ' dash2__hamburger--chat' : ''}`}
@@ -236,7 +234,7 @@ export default function DashLayout({ role }) {
           <svg viewBox="0 0 24 24" aria-hidden><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
         </button>
 
-        {/* ── Main content ── */}
+        {}
         <div className={`dash2__main${isAssistantPage ? ' dash2__main--assistant' : ''}${isChatWorkspace ? ' dash2__main--chat' : ''}`}>
           <Outlet context={{ assistantDraftHandoff, setAssistantDraftHandoff }} />
           {!isChatWorkspace && (

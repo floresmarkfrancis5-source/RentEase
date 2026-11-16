@@ -34,38 +34,8 @@ defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
  * @license https://opensource.org/licenses/MIT MIT License
  */
 
-/*
-|--------------------------------------------------------------------------
-| Enable/Disable Migrations
-|--------------------------------------------------------------------------
-|
-| Migrations are disabled by default for security reasons.
-| You should enable migrations whenever you intend to do a schema migration
-| and disable it back when you're done.
-|
-*/
-// Controlled by .env (MIGRATION_ENABLED=true). Keep it OFF on the deployed server so
-// nobody can hit /refresh or /rollback-all from the browser.
 $config['migration_enabled'] = filter_var(getenv('MIGRATION_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
 
-/*
-|--------------------------------------------------------------------------
-| Migrations table
-|--------------------------------------------------------------------------
-|
-| This is the name of the table that will store the current migrations state.
-|
-*/
 $config['migration_table'] = 'migrations';
 
-/*
-|--------------------------------------------------------------------------
-| Migrations Path
-|--------------------------------------------------------------------------
-|
-| Path to your migrations folder.
-| Typically, it will be within your application path.
-| Also, writing permission is required within the migrations path.
-|
-*/
 $config['migration_path'] = APP_DIR.'migrations/';

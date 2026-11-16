@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Persistent AI assistant conversations, scoped to their landlord account. */
 class Assistant_conversation_model extends Model
 {
     protected $table = 'assistant_conversations';

@@ -1,13 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * Mailer - sends e-mail through any SMTP server with PHPMailer and records every attempt
- * in notifications_log. It never throws: a mail problem must not break a payment or a request.
- *
- * Settings are loaded from app/config/mailer.php (values are supplied through .env).
- * Without SMTP_HOST the mail is logged as "skipped".
- */
 class Mailer
 {
     private $_lava;
@@ -20,15 +13,10 @@ class Mailer
 
     public function configured()
     {
-        // Brevo HTTPS API (preferred on Render Free) OR classic SMTP
         return (string) config_item('brevo_api_key') !== ''
             || ((string) config_item('mailer_smtp_host') !== '' && class_exists('PHPMailer\\PHPMailer\\PHPMailer'));
     }
 
-    /**
-     * Send via Brevo HTTPS REST API (port 443 – works on Render Free).
-     * Returns 'sent' on HTTP 2xx, 'failed' otherwise.
-     */
     private function _brevo_send($to, $subject, $html)
     {
         $api_key   = (string) config_item('brevo_api_key');
@@ -70,10 +58,6 @@ class Mailer
         return 'sent';
     }
 
-    /**
-     * @param array $attachments  [['name' => 'receipt.pdf', 'data' => <binary>, 'type' => 'application/pdf'], ...]
-     * @return string sent | failed | skipped
-     */
     public function send($user_id, $type, $related_id, $to, $subject, $html, array $attachments = [], $async = true)
     {
         $log = $this->_lava->Notification_model;
@@ -83,7 +67,6 @@ class Mailer
             return 'skipped';
         }
 
-        // If Brevo API key is set, send synchronously via HTTPS (no ports, works on Render Free)
         if ((string) config_item('brevo_api_key') !== '') {
             $status = $this->_brevo_send($to, $subject, $html);
             $log->log($user_id, $type, $related_id, $to, $subject, $status,
@@ -91,7 +74,6 @@ class Mailer
             return $status;
         }
 
-        // Asynchronous background dispatch (prevents Gmail SMTP network round-trips from freezing PHP)
         if ($async) {
             $is_windows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
             if (!function_exists('exec')) {
@@ -159,7 +141,6 @@ class Mailer
             return 'sent';
         }
 
-        // Synchronous fallback
         try {
             $m = new PHPMailer\PHPMailer\PHPMailer(true);
             $m->isSMTP();

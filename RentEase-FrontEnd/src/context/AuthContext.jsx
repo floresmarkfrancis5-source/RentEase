@@ -21,7 +21,6 @@ export function AuthProvider({ children }) {
     return r.user
   }, [])
 
-  /** Merge new profile fields into the signed-in user (and the saved session). */
   const updateUser = useCallback((patch) => {
     const cur = authStore.get()
     if (!cur) return
@@ -30,8 +29,7 @@ export function AuthProvider({ children }) {
     setAuth(next)
   }, [])
 
-  // Pick up fields added after the person logged in (phone, profile picture).
-  const signedIn = !!auth?.tokens?.access_token
+const signedIn = !!auth?.tokens?.access_token
   useEffect(() => {
     if (!signedIn) return
     api('/api/auth/me', { auth: true }).then((r) => updateUser({ ...r.user, avatar_v: authStore.get()?.user?.avatar_v ?? 0 })).catch(() => {})
@@ -61,7 +59,6 @@ export function AuthProvider({ children }) {
     if (rt) api('/api/auth/logout', { method: 'POST', body: { refresh_token: rt } }).catch(() => {})
   }, [])
 
-  /** Change password, then sign in again so the session has fresh tokens. */
   const changePassword = useCallback(
     async (current_password, new_password) => {
       const email = authStore.get()?.user?.email

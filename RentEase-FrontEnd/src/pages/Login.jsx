@@ -37,7 +37,7 @@ export default function Login() {
   }
 
   async function handleGoogle(credential) {
-    // loginGoogle throws ApiError (with .message) on failure — GoogleButton catches it.
+
     go(await loginGoogle(credential))
   }
 
@@ -69,8 +69,7 @@ export default function Login() {
 
           <div className="login-divider"><span>{t('or')}</span></div>
 
-          {/* Real Google Sign-In: tenant accounts are linked by the landlord, so Google
-              sign-in is supported for both landlords (admins) and tenants. */}
+          {}
           <GoogleButton label="Sign in with Google" onCredential={handleGoogle} />
 
           <p className="login-note">{t('Tenant accounts are created by your landlord. Ask them for your username and temporary password.')}</p>

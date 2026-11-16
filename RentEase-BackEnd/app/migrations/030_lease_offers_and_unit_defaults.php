@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Add landlord contract defaults and safe future-dated lease offers. */
 class Lease_offers_and_unit_defaults
 {
     private $_lava;

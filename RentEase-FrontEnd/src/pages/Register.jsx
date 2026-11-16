@@ -14,7 +14,7 @@ export default function Register() {
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [busy, setBusy] = useState(false)
-  // Google two-step: after Google verifies, we ask for a username.
+
   const [googleCredential, setGoogleCredential] = useState(null)
   const [googleUsername, setGoogleUsername] = useState('')
 
@@ -55,13 +55,11 @@ export default function Register() {
     }
   }
 
-  /** Step 1 of Google registration: receive the JWT from Google and show username field. */
   async function handleGoogleCredential(credential) {
     setGoogleCredential(credential)
     setError('')
   }
 
-  /** Step 2 of Google registration: submit username + Google credential to the backend. */
   async function submitGoogle(event) {
     event.preventDefault()
     setError('')
@@ -75,15 +73,14 @@ export default function Register() {
     } catch (err) {
       setError(err.message)
       setFieldErrors(err.fields || {})
-      // If the error is about the Google token being expired the user needs to try again.
+
       if (err.status === 401) setGoogleCredential(null)
     } finally {
       setBusy(false)
     }
   }
 
-  // ── Step 2: username selection after Google verified the identity ──
-  if (googleCredential) {
+if (googleCredential) {
     return (
       <section className="login">
         <div className="login-art">
@@ -123,8 +120,7 @@ export default function Register() {
     )
   }
 
-  // ── Step 1: normal registration form + Google sign-up button ──
-  return (
+return (
     <section className="login">
       <div className="login-art">
         <img className="login-photo" src="/images/rentease-auth-default.jpg" alt="" fetchpriority="high" />
@@ -173,7 +169,7 @@ export default function Register() {
 
           <div className="login-divider"><span>{t('or')}</span></div>
 
-          {/* Google sign-up — triggers the 2-step username flow above */}
+          {}
           <GoogleButton label="Create account with Google" onCredential={handleGoogleCredential} />
 
           <p className="login-note">{t('Already have an account?')} <Link to="/login">{t('Log in')}</Link>.</p>

@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Password_reset_model - hashed, expiring and single-use password reset tokens. */
 class Password_reset_model extends Model
 {
     protected $table = 'password_reset_tokens';

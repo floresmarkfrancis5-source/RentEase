@@ -114,8 +114,7 @@ export default function Bills() {
     return result
   }, [rawBills, search, sortBy, status])
 
-  // Totals use every loaded bill for the selected month, independent of status/search filters.
-  const stats = rawBills.reduce((acc, b) => {
+const stats = rawBills.reduce((acc, b) => {
     acc.total += Number(b.amount)
     if (b.status === 'paid') {
       acc.collected += Number(b.amount)
@@ -149,7 +148,7 @@ export default function Bills() {
   }
 
   const adjustBill = async (v) => {
-    // Update a bill's amount and/or notes via PATCH (extend backend if needed)
+
     const r = await api(`/api/admin/bills/${adjust.id}`, {
       method: 'PATCH', auth: true,
       body: { amount: v.amount || null, notes: v.notes || null }
@@ -414,7 +413,7 @@ export default function Bills() {
         )}
       </State>
 
-      {/* Modals */}
+      {}
       {gen && (
         <FormModal title="Generate bills" submitLabel="Generate" onSubmit={generate} onClose={() => setGen(false)}
           fields={[{
@@ -475,7 +474,6 @@ export default function Bills() {
   )
 }
 
-/** Inline bill detail modal showing payment history */
 function BillDetail({ bill, onClose, flash }) {
   const { data, loading } = useLoad(`/api/admin/bills/${bill.id}`)
   const b = data?.data || bill

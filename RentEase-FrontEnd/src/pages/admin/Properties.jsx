@@ -17,7 +17,7 @@ export function MapView({ p, onClose }) {
   return (
     <Modal title={p.name} onClose={onClose}>
       <p className="muted">{[p.address, p.barangay, p.city].filter(Boolean).join(', ')}</p>
-      {/* With a Google key the official Embed API is used; without one the free keyless embed still shows the map. */}
+      {}
       <iframe className="map" title={`Map of ${p.name}`} loading="lazy" referrerPolicy="no-referrer-when-downgrade"
         src={MAPS_KEY
           ? `https://www.google.com/maps/embed/v1/place?key=${encodeURIComponent(MAPS_KEY)}&q=${q}`

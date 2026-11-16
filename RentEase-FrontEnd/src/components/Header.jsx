@@ -68,8 +68,7 @@ export default function Header() {
     return () => window.removeEventListener('scroll', on)
   }, [pathname])
 
-  // Transparent over full-bleed photo backgrounds while the page is at the top.
-  const onHero = (pathname === '/' || pathname === '/onboarding') && top
+const onHero = (pathname === '/' || pathname === '/onboarding') && top
   const ready = user && !user.must_change_password
   const isDashboard = pathname.startsWith('/admin') || pathname.startsWith('/tenant') || pathname.startsWith('/superadmin')
 

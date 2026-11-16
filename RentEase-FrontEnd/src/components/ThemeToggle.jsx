@@ -1,7 +1,6 @@
 import { useTheme } from '../context/ThemeContext'
 import { useLanguage } from '../context/LanguageContext'
 
-/** Round sun/moon button (shows the icon of the mode you will switch TO). */
 export default function ThemeToggle() {
   const { theme, toggle } = useTheme()
   const { t } = useLanguage()

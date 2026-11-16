@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Store backend-controlled, expiring Assistant actions awaiting user confirmation. */
 class Create_assistant_pending_actions
 {
     private $_lava;

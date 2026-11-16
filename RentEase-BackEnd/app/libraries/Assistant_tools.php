@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Typed, landlord-scoped assistant tools using LavaLust's shared query builder. */
 class Assistant_tools
 {
     private $db;

@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** LeaseController (admin) - assign a tenant to a unit with rent, deposit and due day. */
 class LeaseController extends BaseApiController
 {
     public function __construct()
@@ -97,7 +96,7 @@ class LeaseController extends BaseApiController
             $this->fail('The end date must be after the start date.', 422, ['end_date' => 'Must be on or after the start date.']);
         }
         if (empty($data['monthly_rent'])) {
-            $data['monthly_rent'] = (float) $unit['monthly_rent'];   // default: the unit's listed rent
+            $data['monthly_rent'] = (float) $unit['monthly_rent'];
         }
         if ((float) $data['late_fee'] > (float) $data['monthly_rent']) {
             $this->fail('The late fee cannot exceed one month of rent.', 422, ['late_fee' => 'Cannot exceed the monthly rent.']);
@@ -157,7 +156,6 @@ class LeaseController extends BaseApiController
         if ($lease['status'] !== 'active') {
             $this->fail('Ended leases are read-only. Create a new lease if the tenant returns.', 409);
         }
-        // Unit, tenant and start date are immutable so existing billing history stays attached to its original term.
         $rules = array_diff_key($this->rules(), ['unit_id' => 1, 'tenant_id' => 1, 'start_date' => 1]);
         $rules['monthly_rent']['nullable'] = false;
         $data  = $this->validate($this->input(), $rules, $partial);

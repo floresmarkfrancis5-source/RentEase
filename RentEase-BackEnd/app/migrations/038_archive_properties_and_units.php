@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Add reversible archive timestamps for properties and units. */
 class Archive_properties_and_units
 {
     private $_lava;

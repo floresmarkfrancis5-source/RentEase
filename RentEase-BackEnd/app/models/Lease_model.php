@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Lease_model - who rents which unit, for how much and on which due day (table: leases). */
 class Lease_model extends Model
 {
     protected $table = 'leases';
@@ -139,7 +138,6 @@ class Lease_model extends Model
         }
     }
 
-    /** Apply an approved early start while preserving the original lease end date. */
     public function early_start_in_transaction(array $lease, $start_date, $actor_id)
     {
         $newStatus = $start_date <= date('Y-m-d') ? 'active' : 'scheduled';
@@ -218,7 +216,6 @@ class Lease_model extends Model
         }
     }
 
-    /** Insert a lease while the caller owns the surrounding transaction. */
     public function create_lease_in_transaction(array $d, $actor_id = null)
     {
         $term      = !empty($d['contract_term']) ? $d['contract_term'] : 'monthly';
@@ -309,7 +306,6 @@ class Lease_model extends Model
         return $id;
     }
 
-    /** Move an active lease without changing its billing history. Caller owns the transaction. */
     public function transfer_active_lease_in_transaction(array $lease, array $unit, $actor_id = null)
     {
         $today = date('Y-m-d');
@@ -349,7 +345,6 @@ class Lease_model extends Model
             'contract_term', 'contract_months', 'advance_payment', 'down_payment', 'estimated_annual_income',
             'billing_style', 'prorate_first_month', 'grace_period_days', 'late_fee'
         ]));
-        // Normalise notes: empty string → null
         if (array_key_exists('notes', $allowed)) {
             $allowed['notes'] = ($allowed['notes'] !== '' && $allowed['notes'] !== null) ? (string) $allowed['notes'] : null;
         }
@@ -512,7 +507,6 @@ class Lease_model extends Model
         ]);
     }
 
-    /** End a lease and free the unit. */
     public function end_lease($id, $end_date, $actor_id = null)
     {
         $this->db->transaction();

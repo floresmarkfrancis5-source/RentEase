@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** MaintenanceController (admin) - see all repair requests and update their status (e-mails the tenant). */
 class MaintenanceController extends BaseApiController
 {
     public function __construct()
@@ -36,7 +35,6 @@ class MaintenanceController extends BaseApiController
             $this->fail('Image not found', 404);
         }
 
-        // Authorization check: Must be the tenant of this request, the landlord of this property, or a superadmin
         $uid = $this->uid();
         $user = $this->user();
         $is_owner_tenant = (int) ($img['tenant_id'] ?? 0) === $uid;
@@ -47,7 +45,6 @@ class MaintenanceController extends BaseApiController
             $this->fail('Forbidden', 403);
         }
 
-        // If hosted on Cloudinary CDN, redirect directly for high-speed edge delivery
         if (!empty($img['image_url'])) {
             header('Location: ' . $img['image_url'], true, 302);
             exit;
@@ -73,7 +70,6 @@ class MaintenanceController extends BaseApiController
 
         $this->Maintenance_model->update_request($id, $data);
 
-        // Process attached landlord resolution/proof images
         $raw_images = is_array($in['images'] ?? null) ? $in['images'] : [];
         $added_count = 0;
         foreach ($raw_images as $img) {

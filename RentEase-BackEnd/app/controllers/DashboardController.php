@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** DashboardController (admin) - collected / outstanding / overdue summary + notification log. */
 class DashboardController extends BaseApiController
 {
     public function index()

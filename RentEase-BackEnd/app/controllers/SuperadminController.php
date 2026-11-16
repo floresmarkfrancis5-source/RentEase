@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** SuperadminController - platform-wide landlord and superadmin account administration. */
 class SuperadminController extends BaseApiController
 {
     public function __construct()

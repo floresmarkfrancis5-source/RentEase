@@ -1,10 +1,5 @@
 <?php
 
-/**
- * RentEase - users table
- * Raw SQL is used here so foreign keys, a generated column and ENUMs are created exactly as designed.
- * Table order matters: parents are created before the tables that reference them.
- */
 class Create_users_table {
 
     private $_lava;

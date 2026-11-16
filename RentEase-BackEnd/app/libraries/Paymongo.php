@@ -1,13 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * Paymongo - small client for the PayMongo Checkout API (online rent payment).
- *
- * Settings are loaded from app/config/paymongo.php (values are supplied through .env).
- * PAYMONGO_SECRET_KEY should be an sk_test_... key for test mode.
- * The secret key only ever lives on the server - the React app never sees it.
- */
 class Paymongo
 {
     public function configured()
@@ -20,15 +13,11 @@ class Paymongo
         return rtrim((string) config_item('paymongo_api_url'), '/');
     }
 
-    /** Any key other than a test key is treated as live and refused. */
     public function mode()
     {
         return strpos((string) config_item('paymongo_secret_key'), 'sk_test_') === 0 ? 'test' : 'live';
     }
 
-    /**
-     * This project must never create a live PayMongo transaction, including in production.
-     */
     private function guard_test_mode()
     {
         if ($this->mode() !== 'test') {
@@ -36,7 +25,6 @@ class Paymongo
         }
     }
 
-    /** @return array decoded JSON. Throws RuntimeException with PayMongo's message on failure. */
     private function call($method, $path, $body = null)
     {
         $this->guard_test_mode();
@@ -70,10 +58,6 @@ class Paymongo
         return $json;
     }
 
-    /**
-     * Create a hosted checkout page for one bill.
-     * @return array ['id' => 'cs_...', 'checkout_url' => 'https://checkout.paymongo.com/...']
-     */
     public function create_checkout(array $bill, $payment_id, $success_url, $cancel_url, ?array $methods = null)
     {
         $configured_methods = array_values(array_filter(array_map('trim', explode(',', (string) config_item('paymongo_methods')))));
@@ -84,7 +68,7 @@ class Paymongo
         $res = $this->call('POST', '/checkout_sessions', ['data' => ['attributes' => [
             'line_items' => [[
                 'currency'    => 'PHP',
-                'amount'      => (int) round(((float) $bill['amount']) * 100),   // centavos
+                'amount'      => (int) round(((float) $bill['amount']) * 100),
                 'name'        => $bill['description'],
                 'quantity'    => 1,
             ]],
@@ -102,10 +86,6 @@ class Paymongo
         ];
     }
 
-    /**
-     * Ask PayMongo what happened to a checkout session (used when the webhook is late or missing).
-     * @return array ['paid' => bool, 'payment_id' => ?string, 'amount' => ?int centavos]
-     */
     public function get_checkout($checkout_id)
     {
         $res   = $this->call('GET', '/checkout_sessions/' . rawurlencode($checkout_id));

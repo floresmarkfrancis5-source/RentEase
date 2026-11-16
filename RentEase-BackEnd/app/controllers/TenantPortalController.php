@@ -1,10 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * TenantPortalController - everything a tenant can do (routes under /api/my, middleware: auth + tenant).
- * Every query is filtered by the logged-in tenant's id, so a tenant can never see someone else's data.
- */
 class TenantPortalController extends BaseApiController
 {
     public function __construct()
@@ -78,7 +74,6 @@ class TenantPortalController extends BaseApiController
         $this->ok(['data' => $rows, 'count' => count($rows)]);
     }
 
-    /** POST /api/my/bills/{id}/pay -> { checkout_url }  (the browser then goes to PayMongo's hosted page) */
     public function pay($id)
     {
         $this->api->require_method('POST');
@@ -109,7 +104,6 @@ class TenantPortalController extends BaseApiController
 
         $this->Payment_model->cancel_stale_pending($bill['id']);
 
-        // Keep the test checkout amount small; the original bill remains unchanged.
         $chargeAmount = (config_item('paymongo_force_test_piso') && $this->paymongo->mode() === 'test')
             ? 1.00
             : (float) $bill['amount'];
@@ -131,11 +125,6 @@ class TenantPortalController extends BaseApiController
         $this->ok(['message' => 'Redirecting to PayMongo', 'payment_id' => $pid, 'checkout_url' => $co['checkout_url']]);
     }
 
-    /**
-     * POST /api/my/payments/{id}/verify
-     * Called when the tenant returns from PayMongo. If the webhook has not arrived yet we ask PayMongo
-     * directly, so the bill is marked paid either way. Settling is idempotent.
-     */
     public function verify($id)
     {
         $this->api->require_method('POST');
@@ -154,7 +143,7 @@ class TenantPortalController extends BaseApiController
                         $this->notifier->payment_confirmation($p['id']);
                     }
                 }
-            } catch (Throwable $e) { /* leave it pending; the webhook may still arrive */ }
+            } catch (Throwable $e) { }
             $p = $this->Payment_model->find($id);
         }
         $this->ok(['data' => ['id' => (int) $p['id'], 'status' => $p['status'], 'receipt_no' => $p['receipt_no']]]);
@@ -222,7 +211,6 @@ class TenantPortalController extends BaseApiController
         $d['priority'] = $priority;
         $id = $this->Maintenance_model->create_request($d + ['tenant_id' => $this->uid(), 'unit_id' => $lease['unit_id']]);
 
-        // Process attached images (e.g. pasted or selected photos)
         $raw_images = is_array($in['images'] ?? null) ? $in['images'] : [];
         $saved_images = [];
         $max_images = 10;
@@ -247,14 +235,12 @@ class TenantPortalController extends BaseApiController
             }
         }
 
-        // 1. In-app notification to landlord
         $this->Inapp_notification_model->notify_landlord($lease['landlord_id'],
             'new_maintenance_request', 'New repair request',
             $lease['tenant_name'] . ' submitted a repair request for ' . $lease['unit_name'] . ($count > 0 ? " with {$count} photo(s)." : '.'),
             $id
         );
 
-        // 2. Email notification to landlord
         $this->call->library('notifier');
         $this->notifier->new_maintenance_request($id);
 

@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Notification_model - one row per e-mail the system tried to send (table: notifications_log). */
 class Notification_model extends Model
 {
     protected $table = 'notifications_log';
@@ -33,7 +32,6 @@ class Notification_model extends Model
         return $this->db->raw($sql . ' ORDER BY n.id DESC LIMIT ' . (int) $limit, $args)->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /** Was a notification of this type already sent for this record in the last $hours hours? */
     public function sent_recently($type, $related_id, $hours)
     {
         return (bool) $this->db->raw(

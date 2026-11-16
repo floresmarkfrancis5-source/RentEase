@@ -33,7 +33,7 @@ export default function NotificationBell({ user }) {
   const base = user.role === 'admin' ? '/api/admin/in-app-notifications' : '/api/my/notifications'
 
   const refreshCount = useCallback(async () => {
-    // Skip polling if the browser tab is hidden/inactive or if a request is already in flight
+
     if (typeof document !== 'undefined' && document.hidden) return
     if (busyRef.current) return
     busyRef.current = true
@@ -60,12 +60,11 @@ export default function NotificationBell({ user }) {
 
   useEffect(() => {
     refreshCount()
-    // Poll every 60s instead of rapid spamming
+
     const timer = window.setInterval(refreshCount, 60000)
     const handleSidebarRead = () => refreshCount()
 
-    // Check once immediately when the user switches back to this tab
-    const handleVisibility = () => {
+const handleVisibility = () => {
       if (typeof document !== 'undefined' && !document.hidden) {
         refreshCount()
       }

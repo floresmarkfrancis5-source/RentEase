@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Report_model - read-only numbers for the landlord dashboard. */
 class Report_model extends Model
 {
     protected $table = 'payments';

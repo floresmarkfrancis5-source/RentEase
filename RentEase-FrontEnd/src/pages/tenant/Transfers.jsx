@@ -14,7 +14,7 @@ export default function Transfers() {
   const [viewMode, setViewMode] = useState('grid') // 'grid' | 'list'
   const [search, setSearch] = useState('')
   const [propertyFilter, setPropertyFilter] = useState('all')
-  const [sortBy, setSortBy] = useState('price-asc') // 'price-asc' | 'price-desc' | 'name-asc' | 'capacity-desc'
+  const [sortBy, setSortBy] = useState('price-asc') 
   const [toast, flash] = useToast()
 
   const pending = data?.some((r) => r.status === 'pending')
@@ -29,8 +29,7 @@ export default function Transfers() {
     return counts
   }, { all: 0, pending: 0, approved: 0, rejected: 0 }), [data])
 
-  // Monthly limit: check if any request was submitted this calendar month
-  const now = new Date()
+const now = new Date()
   const requestedThisMonth = data?.some((r) => {
     const d = new Date(String(r.created_at).replace(' ', 'T'))
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
@@ -90,8 +89,7 @@ export default function Transfers() {
   const [reqStatusFilter, setReqStatusFilter] = useState('all')
   const [reqSort, setReqSort] = useState('newest')
 
-  // Group filtered units by property (preserves sort order in Icons/Grid view)
-  const groupedByProperty = useMemo(() => {
+const groupedByProperty = useMemo(() => {
     const map = new Map()
     for (const u of filteredUnits) {
       const propKey = String(u.property_id || u.property_name)
@@ -178,7 +176,7 @@ export default function Transfers() {
         </button>
       </PageHead>
 
-      {/* Current lease and eligibility */}
+      {}
       {summary.error && <p className="alert alert--error" role="alert">Your current lease could not be loaded: {summary.error}</p>}
       {summary.data || summary.loading ? (
         <section className="tenant-transfer-lease" aria-label="Current lease and transfer eligibility">
@@ -219,7 +217,7 @@ export default function Transfers() {
         </section>
       ) : null}
 
-      {/* SECTION 1: AVAILABLE UNITS TO TRANSFER TO */}
+      {}
       <section className="tenant-transfer-section" aria-labelledby="tenant-transfer-available-title">
         <div className="tenant-transfer-section__head">
           <div>
@@ -233,7 +231,7 @@ export default function Transfers() {
           <span className="tenant-transfer-section__count">{availableList.length} available</span>
         </div>
 
-        {/* Customizable View Toolbar (Icons vs List, Search & Sort) */}
+        {}
         <ViewToolbar
           view={viewMode}
           onViewChange={setViewMode}
@@ -357,7 +355,7 @@ export default function Transfers() {
         )}
       </section>
 
-      {/* SECTION 2: MY TRANSFER REQUESTS HISTORY */}
+      {}
       <section className="tenant-transfer-history" aria-labelledby="tenant-transfer-history-title">
         <div className="tenant-transfer-section__head">
           <div>
@@ -457,7 +455,7 @@ export default function Transfers() {
         </State>
       </section>
 
-      {/* UNIT DETAILS WINDOW MODAL */}
+      {}
       {inspectUnit && (
         <UnitDetailModal
           unit={inspectUnit}
@@ -483,7 +481,7 @@ export default function Transfers() {
         />
       )}
 
-      {/* TRANSFER SUBMISSION MODAL */}
+      {}
       {open && (
         <TransferModal
           units={availableList}

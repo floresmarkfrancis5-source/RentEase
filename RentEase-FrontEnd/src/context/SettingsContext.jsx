@@ -35,7 +35,6 @@ function readCache(ownerId) {
   try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(`${CACHE_KEY}-${ownerId}`) || '{}') } } catch { return DEFAULT_SETTINGS }
 }
 
-/** Apply the signed-in landlord's appearance without changing RentEase branding. */
 export function applySettings(s, mode = 'light') {
   const colors = paletteColors(s, mode)
   const root = document.documentElement.style
@@ -54,7 +53,6 @@ export function applySettings(s, mode = 'light') {
   document.title = 'RentEase — Rental billing, made effortless'
 }
 
-// Apply cached values synchronously on module load -> no flash of default colors.
 applySettings(readCache())
 
 const Ctx = createContext(null)
@@ -76,7 +74,7 @@ export function SettingsProvider({ children }) {
     setSaved(merged)
     setPreview(null)
     if (ownerId) {
-      try { localStorage.setItem(`${CACHE_KEY}-${ownerId}`, JSON.stringify(merged)) } catch { /* ignore */ }
+      try { localStorage.setItem(`${CACHE_KEY}-${ownerId}`, JSON.stringify(merged)) } catch {  }
     }
   }, [ownerId])
 
@@ -91,7 +89,7 @@ export function SettingsProvider({ children }) {
     setReady(false)
     api('/api/my/settings', { auth: true })
       .then((r) => alive && commit(r.data))
-      .catch(() => { /* Keep this landlord's cached settings if the API is unavailable. */ })
+      .catch(() => {  })
       .finally(() => alive && setReady(true))
     return () => { alive = false }
   }, [ownerId, commit])

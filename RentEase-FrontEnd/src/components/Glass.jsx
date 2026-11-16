@@ -1,6 +1,5 @@
 import { useCallback } from 'react'
 
-/** Liquid-glass surface with a specular highlight that follows the pointer. */
 export default function Glass({ as: Tag = 'div', className = '', children, ...rest }) {
   const onMove = useCallback((e) => {
     const r = e.currentTarget.getBoundingClientRect()

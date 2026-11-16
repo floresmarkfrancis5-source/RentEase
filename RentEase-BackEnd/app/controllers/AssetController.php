@@ -1,12 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * AssetController - serves public images uploaded for one landlord's tenant experience.
- *   GET /api/assets/{key}?owner={landlord_id}
- * The URL stored in the settings carries ?v=<timestamp>, so the browser can cache it "forever"
- * and a new upload still shows up immediately.
- */
 class AssetController extends BaseApiController
 {
     public function __construct()

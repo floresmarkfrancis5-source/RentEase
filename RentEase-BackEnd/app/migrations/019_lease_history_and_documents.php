@@ -1,8 +1,5 @@
 <?php
 
-/**
- * RentEase - lease term history and private PDF attachments.
- */
 class Lease_history_and_documents
 {
     private $_lava;

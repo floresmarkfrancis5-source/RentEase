@@ -1,6 +1,5 @@
 import axios from 'axios'
 
-// Base URL of the deployed (or local) LavaLust API. Set VITE_API_URL in .env
 export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/+$/, '')
 const KEY = 'rentease-auth'
 
@@ -10,7 +9,7 @@ export const authStore = {
     try { return JSON.parse(localStorage.getItem(KEY)) } catch { return null }
   },
   set(v) {
-    try { v ? localStorage.setItem(KEY, JSON.stringify(v)) : localStorage.removeItem(KEY) } catch { /* private mode */ }
+    try { v ? localStorage.setItem(KEY, JSON.stringify(v)) : localStorage.removeItem(KEY) } catch {  }
   },
 }
 
@@ -22,7 +21,6 @@ export class ApiError extends Error {
   }
 }
 
-/* ---------- axios instance (the React app only ever talks to the LavaLust API) ---------- */
 const http = axios.create({ baseURL: API_URL, timeout: 45000 })
 const REQUEST_TIMEOUT_MS = 45000
 
@@ -34,7 +32,6 @@ http.interceptors.request.use((config) => {
   return config
 })
 
-// One shared silent refresh when the access token has expired.
 let refreshing = null
 function refreshTokens() {
   const auth = authStore.get()
@@ -83,12 +80,10 @@ async function send(path, { method = 'GET', body, auth = false, responseType, _r
   }
 }
 
-/** JSON call. Resolves to the parsed response body. */
 export async function api(path, opts = {}) {
   return (await send(path, opts)).data
 }
 
-/** Fetches an authenticated PDF without exposing the token in the URL. */
 export async function fetchPdf(path) {
   const res = await send(path, { auth: true, responseType: 'blob' })
   const header = new Uint8Array(await res.data.slice(0, 1024).arrayBuffer())
@@ -122,7 +117,6 @@ export async function fetchPdf(path) {
   return signatureOffset ? res.data.slice(signatureOffset) : res.data
 }
 
-/** Authenticated document download: the token never goes in the URL. */
 export async function downloadPdf(path, filename) {
   const blob = await fetchPdf(path)
   const url = URL.createObjectURL(blob)

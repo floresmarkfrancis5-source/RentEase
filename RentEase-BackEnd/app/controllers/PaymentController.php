@@ -1,11 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * PaymentController
- *   admin:  GET /api/admin/payments, POST /api/admin/payments  (record a cash / bank-transfer payment)
- *   shared: GET /api/payments/{id}/receipt  (PDF; the landlord, or the tenant who paid)
- */
 class PaymentController extends BaseApiController
 {
     public function __construct()
@@ -24,7 +19,6 @@ class PaymentController extends BaseApiController
         $this->ok(['data' => $rows, 'count' => count($rows)]);
     }
 
-    /** POST /api/admin/payments { bill_id, method: cash|bank_transfer, notes } - landlord received money offline. */
     public function store()
     {
         $this->api->require_method('POST');

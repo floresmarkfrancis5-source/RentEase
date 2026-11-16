@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Landlord-scoped assistant queries and reviewed rental setup actions. */
 class AssistantController extends BaseApiController
 {
     public function __construct()

@@ -1,7 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/** Payment_model - every payment attempt/record (table: payments). Settling a payment marks its bill paid. */
 class Payment_model extends Model
 {
     protected $table = 'payments';
@@ -67,7 +66,6 @@ class Payment_model extends Model
         return $this->db->raw("UPDATE payments SET status = 'failed' WHERE id = ? AND status = 'pending'", [(int) $id])->rowCount();
     }
 
-    /** Abandoned checkouts: cancel older pending PayMongo attempts for the bill so only one is live. */
     public function cancel_stale_pending($bill_id)
     {
         return $this->db->raw(
@@ -75,12 +73,6 @@ class Payment_model extends Model
         )->rowCount();
     }
 
-    /**
-     * Settle one pending payment for an unpaid bill.
-     * The bill lock prevents separate checkout attempts from both issuing receipts.
-     *
-     * @return bool true when THIS call settled it, false when it was stale or already settled
-     */
     public function settle($payment_id, $reference = null)
     {
         $this->db->transaction();

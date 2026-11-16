@@ -1,13 +1,5 @@
 <?php
 
-/**
- * Migration 027: Add contractual and financial projection fields to leases table.
- *   contract_term           - 'monthly', 'annually', 'custom'
- *   contract_months         - length of contract in months (e.g. 12 for 1 year)
- *   advance_payment         - upfront advance rent paid
- *   down_payment            - initial down payment / reservation fee
- *   estimated_annual_income - calculated projected annual revenue (monthly_rent * 12)
- */
 class Add_contractual_fields_to_leases
 {
     private $_lava;
@@ -21,7 +13,6 @@ class Add_contractual_fields_to_leases
     {
         $db = $this->_lava->db;
 
-        // Check if contract_term column already exists
         $check = $db->raw(
             "SELECT COUNT(*) AS c FROM information_schema.COLUMNS 
              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'leases' AND COLUMN_NAME = 'contract_term'"
@@ -37,7 +28,6 @@ class Add_contractual_fields_to_leases
                  ADD COLUMN estimated_annual_income DECIMAL(10,2) NULL DEFAULT NULL AFTER down_payment"
             );
 
-            // Populate estimated_annual_income for existing leases: monthly_rent * 12
             $db->raw("UPDATE leases SET estimated_annual_income = monthly_rent * 12 WHERE estimated_annual_income IS NULL");
         }
     }

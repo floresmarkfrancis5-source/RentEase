@@ -1,6 +1,5 @@
 <?php
 
-/** Add indexes for the dashboard's date filters and owner-scoped joins. */
 class Add_dashboard_query_indexes
 {
     private $_lava;

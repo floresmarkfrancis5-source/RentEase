@@ -48,8 +48,7 @@ function NewRepairModal({ onClose, onSuccess }) {
     }
   }
 
-  // Handle clipboard paste (Ctrl+V) anywhere inside the modal
-  const handlePaste = (e) => {
+const handlePaste = (e) => {
     const items = e.clipboardData?.items
     if (!items) return
     const imageFiles = []
@@ -227,7 +226,7 @@ function RepairDetailModal({ item, onClose, onSelectPhoto }) {
           </p>
         </div>
 
-        {/* Reported photos */}
+        {}
         {tenantPhotos.length > 0 && (
           <div>
             <strong style={{ fontSize: '.88rem', display: 'block', marginBottom: '8px' }}>
@@ -238,7 +237,7 @@ function RepairDetailModal({ item, onClose, onSelectPhoto }) {
           </div>
         )}
 
-        {/* Landlord notes & resolution photos */}
+        {}
         {(item.admin_notes || landlordPhotos.length > 0) && (
           <div style={{ padding: '14px', background: 'color-mix(in srgb, var(--accent) 8%, var(--page-raised))', borderRadius: '10px', border: '1px solid color-mix(in srgb, var(--accent) 30%, var(--page-line))' }}>
             <strong style={{ display: 'block', fontSize: '.9rem', marginBottom: '6px', color: 'var(--accent)' }}>

@@ -1,14 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * SettingsController - landlord-specific theme, tenant welcome page, sidebar logo, and glass look.
- *   GET  /api/settings                  public   (RentEase defaults)
- *   GET  /api/my/settings               signed-in landlord or tenant's landlord settings
- *   PUT  /api/admin/settings            admin
- *   POST /api/admin/settings/reset      admin
- *   GET  /api/admin/settings/history    admin
- */
 class SettingsController extends BaseApiController
 {
     public function __construct()
@@ -78,10 +70,6 @@ class SettingsController extends BaseApiController
         $this->ok(['data' => $this->Site_setting_model->history($this->uid())]);
     }
 
-    /**
-     * PUT /api/admin/settings/image   { "key": "logo|hero", "image": "data:image/webp;base64,..." }
-     * The browser shrinks the picture first; the server still re-checks type, size and dimensions.
-     */
     public function image_upload()
     {
         $this->api->require_method('PUT');

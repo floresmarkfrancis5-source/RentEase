@@ -1,11 +1,6 @@
 <?php
 defined('PREVENT_DIRECT_ACCESS') OR exit('No direct script access allowed');
 
-/**
- * WebhookController - PayMongo calls this when a checkout is paid.
- *   POST /api/webhooks/paymongo     (middleware: paymongo_webhook = HMAC signature check)
- * Register the URL in the PayMongo dashboard for the event  checkout_session.payment.paid.
- */
 class WebhookController extends BaseApiController
 {
     public function __construct()
@@ -21,7 +16,7 @@ class WebhookController extends BaseApiController
         $type  = $event['data']['attributes']['type'] ?? '';
 
         if ($type !== 'checkout_session.payment.paid') {
-            $this->ok(['received' => true, 'ignored' => $type]);        // acknowledge events we do not use
+            $this->ok(['received' => true, 'ignored' => $type]);
         }
 
         $session     = $event['data']['attributes']['data'] ?? [];
@@ -32,7 +27,6 @@ class WebhookController extends BaseApiController
         if (!$payment) {
             $this->ok(['received' => true, 'ignored' => 'unknown checkout']);
         }
-        // Never trust the event blindly: the paid amount must equal what we billed.
         $paid_centavos = (int) ($pay['attributes']['amount'] ?? 0);
         if ($paid_centavos !== (int) round(((float) $payment['amount']) * 100)) {
             $this->ok(['received' => true, 'ignored' => 'amount mismatch']);
